@@ -9,6 +9,10 @@ workflows:
       xcode: latest
 
     scripts:
+      - name: Update CocoaPods repo
+        script: |
+          pod repo update
+
       - name: Flutter pub get
         script: |
           flutter pub get
