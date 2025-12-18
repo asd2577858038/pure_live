@@ -1,7 +1,6 @@
 workflows:
-  # TrollStore 专用构建流程
   ios-trollstore:
-    name: 构建 iOS IPA (给 TrollStore 用)
+    name: 构建 iOS IPA (TrollStore 版)
     max_build_duration: 60
     instance_type: mac_mini_m2
     
@@ -9,71 +8,186 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
+      vars:
+        # 如果需要可以在这里定义环境变量
+        FLUTTER_VERSION: "stable"
     
     scripts:
-      # 第1步: 获取 Flutter 依赖包
-      - name: 第1步 - 获取依赖
+      - name: 第1步 - 清理环境
         script: |
-          echo "开始获取 Flutter 依赖..."
+          echo "🧹 清理旧的构建文件..."
+          flutter clean
+          cd ios
+          rm -rf Pods Podfile.lock .symlinks
+          cd ..
+      
+      - name: 第2步 - 获取 Flutter 依赖
+        script: |
+          echo "📦 获取 Flutter 依赖..."
           flutter pub get
-      
-      # 第2步: 清理与初始化 (确保环境干净)
-      - name: 第2步 - 深度清理
-        script: |
-          echo "开始清理旧缓存..."
-          rm -rf build
-          cd ios
-          rm -rf Pods Podfile.lock .symlinks Flutter/Flutter.framework
-      
-      # 第3步: 安装 iOS 依赖
-      - name: 第3步 - 安装 Pods
-        script: |
-          echo "开始安装 iOS 依赖..."
-          cd ios
-          pod install --repo-update
-      
-      # 第4步: 编译 iOS 应用 (不签名，适合 TrollStore)
-      - name: 第4步 - 编译应用
-        script: |
-          echo "开始编译 iOS 应用..."
-          flutter build ios --release --no-codesign
-      
-      # 第5步: 强制打包成 IPA
-      - name: 第5步 - 制作 IPA 压缩包
-        script: |
-          echo "开始制作 IPA..."
-          # 获取当前绝对路径，防止路径跳转错误
-          PROJECT_ROOT=$(pwd)
-          APP_PATH="$PROJECT_ROOT/build/ios/iphoneos/Runner.app"
-          PAYLOAD_PATH="$PROJECT_ROOT/build/ios/iphoneos/Payload"
-          IPA_NAME="PureLive.ipa"
-
-          # 检查编译产物是否存在
-          if [ ! -d "$APP_PATH" ]; then
-            echo "❌ 错误: 找不到 Runner.app，编译可能失败了。"
+          
+          # 验证依赖是否正确安装
+          if [ ! -d ".dart_tool" ]; then
+            echo "❌ Flutter 依赖获取失败"
             exit 1
           fi
-
-          # 创建 Payload 结构
-          cd "$PROJECT_ROOT/build/ios/iphoneos"
+          echo "✅ Flutter 依赖获取成功"
+      
+      - name: 第3步 - 生成 iOS 配置
+        script: |
+          echo "⚙️  生成 iOS 配置文件..."
+          cd ios
+          
+          # 检查 Podfile
+          if [ ! -f "Podfile" ]; then
+            echo "❌ Podfile 不存在"
+            exit 1
+          fi
+          
+          echo "📄 Podfile 内容:"
+          cat Podfile
+          
+          # 更新 CocoaPods 仓库
+          echo "🔄 更新 CocoaPods 仓库..."
+          pod repo update
+          
+          # 安装 CocoaPods 依赖
+          echo "📦 安装 CocoaPods 依赖..."
+          pod install --repo-update --verbose
+          
+          # 验证 Pods 安装
+          if [ ! -d "Pods" ]; then
+            echo "❌ CocoaPods 依赖安装失败"
+            exit 1
+          fi
+          
+          # 验证 workspace
+          if [ ! -f "Runner.xcworkspace/contents.xcworkspacedata" ]; then
+            echo "❌ Xcode workspace 创建失败"
+            exit 1
+          fi
+          
+          cd ..
+          echo "✅ iOS 配置生成成功"
+          echo "📂 ios 目录结构:"
+          ls -la ios/
+      
+      - name: 第4步 - 构建 iOS 应用
+        script: |
+          echo "🔨 开始构建 iOS 应用..."
+          
+          # 确保在项目根目录
+          PROJECT_ROOT=$(pwd)
+          echo "📍 当前目录: $PROJECT_ROOT"
+          
+          # 检查 ios 目录和 workspace
+          if [ ! -d "ios" ]; then
+            echo "❌ ios 目录不存在"
+            exit 1
+          fi
+          
+          if [ ! -f "ios/Runner.xcworkspace/contents.xcworkspacedata" ]; then
+            echo "❌ Xcode workspace 不存在，CocoaPods 可能安装失败"
+            exit 1
+          fi
+          
+          # 构建 iOS 应用（不签名）
+          set -e  # 遇到错误立即退出
+          flutter build ios \
+            --release \
+            --no-codesign \
+            --verbose
+          
+          # 验证构建产物
+          echo "🔍 检查构建产物..."
+          if [ ! -d "build/ios/iphoneos/Runner.app" ]; then
+            echo "❌ iOS 应用构建失败 - Runner.app 不存在"
+            echo "📂 当前目录结构:"
+            ls -la build/ 2>/dev/null || echo "build 目录不存在"
+            ls -la build/ios/ 2>/dev/null || echo "build/ios 目录不存在"
+            exit 1
+          fi
+          
+          echo "✅ iOS 应用构建成功"
+          echo "📂 构建产物:"
+          ls -lh build/ios/iphoneos/Runner.app
+      
+      - name: 第5步 - 打包 IPA
+        script: |
+          echo "📦 打包 IPA 文件..."
+          
+          # 设置严格模式
+          set -e
+          
+          PROJECT_ROOT=$(pwd)
+          BUILD_DIR="$PROJECT_ROOT/build/ios/iphoneos"
+          IPA_NAME="PureLive_$(date +%Y%m%d_%H%M%S).ipa"
+          
+          echo "📍 项目根目录: $PROJECT_ROOT"
+          echo "📍 构建目录: $BUILD_DIR"
+          
+          # 再次验证构建产物存在
+          if [ ! -d "$BUILD_DIR/Runner.app" ]; then
+            echo "❌ 错误: Runner.app 不存在"
+            echo "📂 检查目录结构:"
+            ls -la "$PROJECT_ROOT/build/" 2>/dev/null || echo "build 目录不存在"
+            ls -la "$PROJECT_ROOT/build/ios/" 2>/dev/null || echo "build/ios 目录不存在"
+            exit 1
+          fi
+          
+          # 进入构建目录
+          cd "$BUILD_DIR"
+          echo "📍 已切换到: $(pwd)"
+          
+          # 清理并创建 Payload 目录
+          rm -rf Payload
           mkdir -p Payload
+          
+          # 复制 app 到 Payload
+          echo "📋 复制 Runner.app 到 Payload..."
           cp -r Runner.app Payload/
           
-          # 打包 IPA 到项目根目录
+          # 验证复制成功
+          if [ ! -d "Payload/Runner.app" ]; then
+            echo "❌ 复制 Runner.app 失败"
+            exit 1
+          fi
+          
+          # 打包成 IPA
+          echo "🗜️  压缩 IPA..."
           zip -r "$PROJECT_ROOT/$IPA_NAME" Payload
           
-          echo "✅ IPA 打包完成!"
+          # 返回项目根目录
           cd "$PROJECT_ROOT"
+          
+          # 验证 IPA 文件
+          if [ ! -f "$IPA_NAME" ]; then
+            echo "❌ IPA 打包失败"
+            exit 1
+          fi
+          
+          # 显示 IPA 信息
+          echo "✅ IPA 打包成功!"
+          echo "📦 文件名: $IPA_NAME"
           ls -lh "$IPA_NAME"
+          
+          # 创建一个固定名称的副本，方便下载
+          cp "$IPA_NAME" PureLive.ipa
+          echo "📦 已创建副本: PureLive.ipa"
     
-    # 保存生成的 IPA 文件
     artifacts:
       - "*.ipa"
     
     publishing:
       email:
         recipients:
-          - your-email@example.com  # 记得改写成你的邮箱
+          - your-email@example.com
         notify:
           success: true
           failure: true
+      
+      # 可选：添加其他发布方式
+      # app_store_connect:
+      #   api_key: $APP_STORE_CONNECT_KEY_ID
+      #   key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+      #   issuer_id: $APP_STORE_CONNECT_ISSUER_ID
