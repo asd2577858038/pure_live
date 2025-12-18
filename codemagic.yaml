@@ -44,10 +44,6 @@ workflows:
           # 重新初始化（会从 CDN 下载最新 specs）
           pod setup
           
-          # 验证设置
-          echo "📋 CocoaPods 配置:"
-          pod env | grep -A 5 "Repos"
-          
           echo "✅ CocoaPods 重建完成"
       
       - name: 步骤4 - 获取 Flutter 依赖
@@ -75,7 +71,6 @@ workflows:
           # 确保使用 CDN 源
           if ! grep -q "source 'https://cdn.cocoapods.org/'" Podfile; then
             echo "添加 CDN 源到 Podfile..."
-            # 在文件开头插入 CDN 源
             echo "source 'https://cdn.cocoapods.org/'" | cat - Podfile > Podfile.tmp
             mv Podfile.tmp Podfile
           fi
@@ -86,15 +81,36 @@ workflows:
           cd ..
           echo "✅ Podfile 配置完成"
       
-      - name: 步骤6 - 手动运行 pod install
+      - name: 步骤6 - 生成 Flutter 插件注册
+        script: |
+          set -e
+          echo "🔧 生成 Flutter 插件注册..."
+          
+          # 重新生成插件注册文件
+          cd ios
+          flutter pub get
+          cd ..
+          
+          # 验证 GeneratedPluginRegistrant.m
+          if [ ! -f "ios/Runner/GeneratedPluginRegistrant.m" ]; then
+            echo "❌ GeneratedPluginRegistrant.m 未生成"
+            exit 1
+          fi
+          
+          echo "📄 GeneratedPluginRegistrant.m 前30行:"
+          head -30 ios/Runner/GeneratedPluginRegistrant.m
+          
+          echo "✅ 插件注册生成完成"
+      
+      - name: 步骤7 - 手动运行 pod install
         script: |
           set -e
           cd ios
           
           echo "📦 手动安装 CocoaPods 依赖..."
-          echo "⏰ 这可能需要几分钟（正在下载 FFmpeg 等大型框架）..."
+          echo "⏰ 这可能需要几分钟..."
           
-          # 手动运行 pod install（不通过 Flutter）
+          # 手动运行 pod install
           pod install --repo-update --verbose 2>&1 | tee pod_install.log
           
           # 检查是否成功
@@ -110,62 +126,40 @@ workflows:
             exit 1
           fi
           
+          # 检查关键插件是否安装
+          echo "🔍 检查关键插件:"
+          ls -la Pods/ | grep -E "app_links|fijkplayer" || echo "⚠️ 某些插件可能未安装"
+          
           echo "✅ Pod 安装成功"
-          echo "📂 Pods 目录:"
-          ls -la Pods/ | head -20
           
           cd ..
       
-      - name: 步骤7 - 使用 xcodebuild 直接构建（跳过 Flutter 的 pod 检查）
+      - name: 步骤8 - 使用 flutter build 构建
         script: |
           set -e
           
-          echo "🔨 使用 xcodebuild 直接构建..."
+          echo "🔨 使用 Flutter 构建 iOS..."
           
-          cd ios
+          # 使用 flutter build 确保所有东西都正确
+          flutter build ios \
+            --release \
+            --no-codesign \
+            --verbose \
+            2>&1 | tee flutter_build.log
           
-          # 使用 xcodebuild 直接构建
-          xcodebuild \
-            -workspace Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -destination generic/platform=iOS \
-            -archivePath $PWD/build/Runner.xcarchive \
-            archive \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            | tee xcodebuild.log
-          
-          # 检查 archive 是否成功
-          if [ ! -d "build/Runner.xcarchive" ]; then
-            echo "❌ Archive 失败"
+          # 检查构建是否成功
+          if [ ! -d "build/ios/iphoneos/Runner.app" ]; then
+            echo "❌ 构建失败 - Runner.app 不存在"
             echo "📄 最后100行日志:"
-            tail -100 xcodebuild.log
+            tail -100 flutter_build.log
             exit 1
           fi
-          
-          # 导出 app
-          echo "📦 导出 app..."
-          cd build/Runner.xcarchive/Products/Applications
-          
-          if [ ! -d "Runner.app" ]; then
-            echo "❌ Runner.app 不存在"
-            ls -la
-            exit 1
-          fi
-          
-          # 复制到标准位置
-          mkdir -p $PWD/../../../build/ios/iphoneos
-          cp -r Runner.app $PWD/../../../build/ios/iphoneos/
-          
-          cd $PWD/../../../..
           
           echo "✅ 构建成功"
           echo "📂 构建产物:"
           ls -lh build/ios/iphoneos/Runner.app
       
-      - name: 步骤8 - 打包 IPA
+      - name: 步骤9 - 打包 IPA
         script: |
           set -e
           
@@ -179,7 +173,6 @@ workflows:
           # 验证 app 存在
           if [ ! -d "$BUILD_DIR/Runner.app" ]; then
             echo "❌ Runner.app 不存在"
-            find build -type d -name "*.app" 2>/dev/null || echo "未找到任何 app"
             exit 1
           fi
           
@@ -212,7 +205,7 @@ workflows:
     artifacts:
       - "*.ipa"
       - "ios/pod_install.log"
-      - "ios/xcodebuild.log"
+      - "flutter_build.log"
     
     publishing:
       email:
