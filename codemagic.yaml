@@ -1,6 +1,6 @@
 workflows:
-  ios-pure-live:
-    name: iOS Pure Live (Unsigned IPA)
+  ios-unsigned:
+    name: iOS Unsigned IPA
     max_build_duration: 60
     instance_type: mac_mini_m2
 
@@ -17,17 +17,12 @@ workflows:
         script: |
           flutter pub get
 
-      - name: Clean CocoaPods cache
-        script: |
-          rm -rf ios/Pods
-          rm -rf ios/Podfile.lock
-          pod cache clean --all
-          rm -rf ~/.cocoapods/repos
-
       - name: Pod install (CDN fresh)
         script: |
           cd ios
-          pod install
+          pod deintegrate || true
+          rm -rf Pods Podfile.lock
+          pod install --repo-update
           cd ..
 
       - name: Build iOS (no codesign)
