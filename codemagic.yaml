@@ -13,11 +13,10 @@ workflows:
         script: |
           flutter pub get
 
-      - name: Update Pods & Install (force)
+      - name: Pod install (CDN only)
         script: |
           cd ios
-          pod repo update
-          pod install --repo-update
+          pod install
           cd ..
 
       - name: Build iOS (no codesign)
@@ -26,7 +25,7 @@ workflows:
 
       - name: Create IPA
         script: |
-          mkdir Payload
+          mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
           zip -r PureLive.ipa Payload
 
