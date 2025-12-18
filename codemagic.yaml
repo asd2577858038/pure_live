@@ -74,10 +74,10 @@ workflows:
           
           # 确保使用 CDN 源
           if ! grep -q "source 'https://cdn.cocoapods.org/'" Podfile; then
-            # 在第一行插入 CDN 源
-            sed -i.bak '1i\
-source '\''https://cdn.cocoapods.org/'\''
-' Podfile
+            echo "添加 CDN 源到 Podfile..."
+            # 在文件开头插入 CDN 源
+            echo "source 'https://cdn.cocoapods.org/'" | cat - Podfile > Podfile.tmp
+            mv Podfile.tmp Podfile
           fi
           
           echo "📄 Podfile 前10行:"
