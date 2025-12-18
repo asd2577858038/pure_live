@@ -9,31 +9,16 @@ workflows:
       xcode: latest
 
     scripts:
-  - name: Flutter pub get
-    script: |
-      flutter pub get
-
-  - name: Update Pods & Install (force)
-    script: |
-      cd ios
-      pod repo update
-      pod install --repo-update
-      cd ..
-
-  - name: Build iOS (no codesign)
-    script: |
-      flutter build ios --release --no-codesign
-
-  - name: Create IPA
-    script: |
-      mkdir Payload
-      cp -r build/ios/iphoneos/Runner.app Payload/
-      zip -r PureLive.ipa Payload
-
-
       - name: Flutter pub get
         script: |
           flutter pub get
+
+      - name: Update Pods & Install (force)
+        script: |
+          cd ios
+          pod repo update
+          pod install --repo-update
+          cd ..
 
       - name: Build iOS (no codesign)
         script: |
