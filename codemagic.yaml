@@ -9,11 +9,22 @@ workflows:
       xcode: latest
 
     scripts:
+      - name: Flutter clean
+        script: |
+          flutter clean
+
       - name: Flutter pub get
         script: |
           flutter pub get
 
-      - name: Pod install (CDN only)
+      - name: Clean CocoaPods cache
+        script: |
+          rm -rf ios/Pods
+          rm -rf ios/Podfile.lock
+          pod cache clean --all
+          rm -rf ~/.cocoapods/repos
+
+      - name: Pod install (CDN fresh)
         script: |
           cd ios
           pod install
