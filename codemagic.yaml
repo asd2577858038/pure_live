@@ -1,39 +1,82 @@
 workflows:
-  ios-pure-live:
-    name: iOS Pure Live (Unsigned IPA)
+  # TrollStore 专用构建流程
+  ios-trollstore:
+    name: 构建 iOS IPA (给 TrollStore 用)
     max_build_duration: 60
     instance_type: mac_mini_m2
-
+    
     environment:
       flutter: stable
       xcode: latest
-
+      cocoapods: default
+    
     scripts:
-      # Step 1: Get Flutter dependencies
-      - name: Flutter pub get
+      # 第1步: 获取 Flutter 依赖包
+      - name: 第1步 - 获取依赖
         script: |
+          echo "开始获取 Flutter 依赖..."
+          flutter --version
           flutter pub get
-
-      # Step 2: Update CocoaPods specs repo and install pods
-      - name: Update CocoaPods and Install Pods
+          echo "✅ 依赖获取完成"
+      
+      # 第2步: 清理旧的缓存 (解决依赖冲突)
+      - name: 第2步 - 清理缓存
         script: |
+          echo "开始清理旧缓存..."
           cd ios
-          pod repo update  # Update CocoaPods repository
-          pod install --repo-update  # Install dependencies with the updated repo
-          cd ..
-
-      # Step 3: Build iOS app without codesign
-      - name: Build iOS (no codesign)
+          rm -rf Pods
+          rm -rf Podfile.lock
+          rm -rf ~/Library/Caches/CocoaPods
+          rm -rf .symlinks
+          rm -rf Flutter/Flutter.framework
+          echo "✅ 缓存清理完成"
+      
+      # 第3步: 更新 CocoaPods 仓库 (这是关键!)
+      - name: 第3步 - 更新 CocoaPods 仓库
         script: |
+          echo "开始更新 CocoaPods 仓库..."
+          cd ios
+          pod repo update
+          echo "✅ 仓库更新完成"
+      
+      # 第4步: 安装 iOS 依赖
+      - name: 第4步 - 安装 iOS 依赖
+        script: |
+          echo "开始安装 iOS 依赖..."
+          cd ios
+          pod install --repo-update --verbose
+          echo "✅ 依赖安装完成"
+      
+      # 第5步: 编译 iOS 应用
+      - name: 第5步 - 编译应用
+        script: |
+          echo "开始编译 iOS 应用..."
           flutter build ios --release --no-codesign
-
-      # Step 4: Create IPA from the built app
-      - name: Create IPA
+          echo "✅ 编译完成"
+      
+      # 第6步: 打包成 IPA
+      - name: 第6步 - 打包 IPA
         script: |
+          echo "开始打包 IPA..."
+          cd build/ios/iphoneos
           mkdir Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -r PureLive.ipa Payload
-
-    # Artifacts: Save the generated IPA as an artifact
+          cp -r Runner.app Payload/
+          zip -r ../../../PureLive.ipa Payload
+          rm -rf Payload
+          cd ../../..
+          echo "✅ IPA 打包完成!"
+          echo "文件大小:"
+          ls -lh PureLive.ipa
+    
+    # 保存生成的文件
     artifacts:
       - PureLive.ipa
+    
+    # 构建结果邮件通知 (可选,把邮箱改成你的)
+    publishing:
+      email:
+        recipients:
+          - your-email@example.com
+        notify:
+          success: true
+          failure: true
