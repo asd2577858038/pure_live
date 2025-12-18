@@ -9,19 +9,42 @@ workflows:
       xcode: latest
       cocoapods: default
       vars:
-        # 如果需要可以在这里定义环境变量
-        FLUTTER_VERSION: "stable"
+        # CocoaPods 相关环境变量
+        COCOAPODS_DISABLE_STATS: true
     
     scripts:
-      - name: 第1步 - 清理环境
+      - name: 第1步 - 彻底清理环境
         script: |
-          echo "🧹 清理旧的构建文件..."
+          echo "🧹 彻底清理构建环境..."
+          
+          # 清理 Flutter 缓存
           flutter clean
+          
+          # 清理 iOS 构建产物
           cd ios
-          rm -rf Pods Podfile.lock .symlinks
+          rm -rf Pods Podfile.lock .symlinks build DerivedData
+          
+          # 清理 CocoaPods 全局缓存
+          echo "🧹 清理 CocoaPods 缓存..."
+          rm -rf ~/.cocoapods/repos
+          rm -rf ~/Library/Caches/CocoaPods
+          pod cache clean --all || true
+          
           cd ..
+          echo "✅ 环境清理完成"
       
-      - name: 第2步 - 获取 Flutter 依赖
+      - name: 第2步 - 初始化 CocoaPods
+        script: |
+          echo "🔧 初始化 CocoaPods..."
+          
+          # 完全重新设置 CocoaPods specs
+          pod setup
+          
+          # 验证 CocoaPods 设置
+          pod --version
+          echo "✅ CocoaPods 初始化完成"
+      
+      - name: 第3步 - 获取 Flutter 依赖
         script: |
           echo "📦 获取 Flutter 依赖..."
           flutter pub get
@@ -33,9 +56,10 @@ workflows:
           fi
           echo "✅ Flutter 依赖获取成功"
       
-      - name: 第3步 - 生成 iOS 配置
+      - name: 第4步 - 检查 iOS 配置
         script: |
-          echo "⚙️  生成 iOS 配置文件..."
+          echo "🔍 检查 iOS 配置..."
+          
           cd ios
           
           # 检查 Podfile
@@ -47,56 +71,42 @@ workflows:
           echo "📄 Podfile 内容:"
           cat Podfile
           
-          # 更新 CocoaPods 仓库
-          echo "🔄 更新 CocoaPods 仓库..."
-          pod repo update
-          
-          # 安装 CocoaPods 依赖
-          echo "📦 安装 CocoaPods 依赖..."
-          pod install --repo-update --verbose
-          
-          # 验证 Pods 安装
-          if [ ! -d "Pods" ]; then
-            echo "❌ CocoaPods 依赖安装失败"
-            exit 1
-          fi
-          
-          # 验证 workspace
-          if [ ! -f "Runner.xcworkspace/contents.xcworkspacedata" ]; then
-            echo "❌ Xcode workspace 创建失败"
-            exit 1
-          fi
+          # 检查 iOS 最低版本
+          echo ""
+          echo "📱 iOS 部署目标:"
+          grep -E "platform :ios" Podfile || echo "未找到 platform 设置"
           
           cd ..
-          echo "✅ iOS 配置生成成功"
-          echo "📂 ios 目录结构:"
-          ls -la ios/
+          echo "✅ iOS 配置检查完成"
       
-      - name: 第4步 - 构建 iOS 应用
+      - name: 第5步 - 构建 iOS 应用
         script: |
           echo "🔨 开始构建 iOS 应用..."
+          
+          # 设置严格模式
+          set -e
           
           # 确保在项目根目录
           PROJECT_ROOT=$(pwd)
           echo "📍 当前目录: $PROJECT_ROOT"
           
-          # 检查 ios 目录和 workspace
-          if [ ! -d "ios" ]; then
-            echo "❌ ios 目录不存在"
-            exit 1
-          fi
-          
-          if [ ! -f "ios/Runner.xcworkspace/contents.xcworkspacedata" ]; then
-            echo "❌ Xcode workspace 不存在，CocoaPods 可能安装失败"
-            exit 1
-          fi
-          
-          # 构建 iOS 应用（不签名）
-          set -e  # 遇到错误立即退出
+          # Flutter 构建会自动处理 pod install
+          # 添加 --verbose 查看详细输出
+          echo "🚀 执行 Flutter 构建..."
           flutter build ios \
             --release \
             --no-codesign \
-            --verbose
+            --verbose \
+            2>&1 | tee flutter_build.log
+          
+          # 检查构建是否真的成功
+          BUILD_SUCCESS=$(grep -c "Built.*Runner.app" flutter_build.log || echo "0")
+          if [ "$BUILD_SUCCESS" -eq "0" ]; then
+            echo "❌ 构建可能失败，未找到成功标记"
+            echo "📄 最后50行日志:"
+            tail -50 flutter_build.log
+            exit 1
+          fi
           
           # 验证构建产物
           echo "🔍 检查构建产物..."
@@ -112,7 +122,7 @@ workflows:
           echo "📂 构建产物:"
           ls -lh build/ios/iphoneos/Runner.app
       
-      - name: 第5步 - 打包 IPA
+      - name: 第6步 - 打包 IPA
         script: |
           echo "📦 打包 IPA 文件..."
           
@@ -121,7 +131,8 @@ workflows:
           
           PROJECT_ROOT=$(pwd)
           BUILD_DIR="$PROJECT_ROOT/build/ios/iphoneos"
-          IPA_NAME="PureLive_$(date +%Y%m%d_%H%M%S).ipa"
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          IPA_NAME="PureLive_${TIMESTAMP}.ipa"
           
           echo "📍 项目根目录: $PROJECT_ROOT"
           echo "📍 构建目录: $BUILD_DIR"
@@ -130,8 +141,7 @@ workflows:
           if [ ! -d "$BUILD_DIR/Runner.app" ]; then
             echo "❌ 错误: Runner.app 不存在"
             echo "📂 检查目录结构:"
-            ls -la "$PROJECT_ROOT/build/" 2>/dev/null || echo "build 目录不存在"
-            ls -la "$PROJECT_ROOT/build/ios/" 2>/dev/null || echo "build/ios 目录不存在"
+            find build -type d -name "*.app" 2>/dev/null || echo "未找到任何 .app 文件"
             exit 1
           fi
           
@@ -153,9 +163,13 @@ workflows:
             exit 1
           fi
           
+          # 显示 app 包内容
+          echo "📦 App 包内容:"
+          ls -lh Payload/Runner.app | head -20
+          
           # 打包成 IPA
           echo "🗜️  压缩 IPA..."
-          zip -r "$PROJECT_ROOT/$IPA_NAME" Payload
+          zip -r "$PROJECT_ROOT/$IPA_NAME" Payload -q
           
           # 返回项目根目录
           cd "$PROJECT_ROOT"
@@ -174,9 +188,15 @@ workflows:
           # 创建一个固定名称的副本，方便下载
           cp "$IPA_NAME" PureLive.ipa
           echo "📦 已创建副本: PureLive.ipa"
+          
+          # 显示最终产物
+          echo ""
+          echo "🎉 构建完成！产物列表:"
+          ls -lh *.ipa
     
     artifacts:
       - "*.ipa"
+      - flutter_build.log
     
     publishing:
       email:
@@ -185,9 +205,3 @@ workflows:
         notify:
           success: true
           failure: true
-      
-      # 可选：添加其他发布方式
-      # app_store_connect:
-      #   api_key: $APP_STORE_CONNECT_KEY_ID
-      #   key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
-      #   issuer_id: $APP_STORE_CONNECT_ISSUER_ID
