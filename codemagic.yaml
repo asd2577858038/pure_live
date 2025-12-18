@@ -4,27 +4,36 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
 
-    environment:  
-      flutter: stable  
-      xcode: latest  
+    environment:
+      flutter: stable
+      xcode: latest
 
-    scripts:  
-      - name: Flutter pub get  
+    scripts:
+      # Step 1: Get Flutter dependencies
+      - name: Flutter pub get
         script: |
-          flutter pub get  
+          flutter pub get
 
-      - name: Build iOS (no codesign)  
+      # Step 2: Update CocoaPods specs repo and install pods
+      - name: Update CocoaPods and Install Pods
         script: |
           cd ios
-          pod install --repo-update
+          pod repo update  # Update CocoaPods repository
+          pod install --repo-update  # Install dependencies with the updated repo
           cd ..
-          flutter build ios --no-codesign
 
-      - name: Create IPA  
-        script: |  
-          mkdir Payload  
-          cp -r build/ios/iphoneos/Runner.app Payload/  
-          zip -r PureLive.ipa Payload  
+      # Step 3: Build iOS app without codesign
+      - name: Build iOS (no codesign)
+        script: |
+          flutter build ios --release --no-codesign
 
-    artifacts:  
+      # Step 4: Create IPA from the built app
+      - name: Create IPA
+        script: |
+          mkdir Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r PureLive.ipa Payload
+
+    # Artifacts: Save the generated IPA as an artifact
+    artifacts:
       - PureLive.ipa
