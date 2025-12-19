@@ -1,5 +1,4 @@
 workflows:
-  # iOS TrollStore 构建 - 完全无签名版
   ios-trollstore-build:
     name: iOS TrollStore 构建 (无签名)
     max_build_duration: 60
@@ -11,7 +10,6 @@ workflows:
       cocoapods: default
     
     scripts:
-      # 步骤 1: 环境检查
       - name: 环境检查
         script: |
           echo "========================================="
@@ -22,7 +20,6 @@ workflows:
           xcodebuild -version
           echo "========================================="
       
-      # 步骤 2: Flutter 准备
       - name: Flutter 准备
         script: |
           echo "========================================="
@@ -33,7 +30,6 @@ workflows:
           echo "✅ Flutter 依赖准备完成"
           echo "========================================="
       
-      # 步骤 3: 修复依赖问题
       - name: 修复依赖问题
         script: |
           echo "========================================="
@@ -51,7 +47,6 @@ workflows:
           fi
           echo "========================================="
       
-      # 步骤 4: 深度清理 CocoaPods
       - name: 深度清理 CocoaPods
         script: |
           echo "========================================="
@@ -67,7 +62,6 @@ workflows:
           echo "✅ 清理完成"
           echo "========================================="
       
-      # 步骤 5: 配置 CocoaPods
       - name: 配置 CocoaPods
         script: |
           echo "========================================="
@@ -80,7 +74,6 @@ workflows:
           echo "✅ 配置完成"
           echo "========================================="
       
-      # 步骤 6: 安装 iOS 依赖
       - name: 安装 iOS 依赖
         script: |
           echo "========================================="
@@ -103,32 +96,23 @@ workflows:
           cd ..
           echo "========================================="
       
-      # 步骤 7: 禁用代码签名 (关键!)
       - name: 禁用代码签名
         script: |
           echo "========================================="
           echo "🔓 禁用代码签名"
           echo "========================================="
           
-          # 修改 Xcode 项目配置,完全禁用签名
           cd ios
-          
-          # 备份原始文件
           cp Runner.xcodeproj/project.pbxproj Runner.xcodeproj/project.pbxproj.backup
           
-          # 使用 sed 禁用代码签名
           sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer"/CODE_SIGN_IDENTITY = ""/g' Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Distribution"/CODE_SIGN_IDENTITY = ""/g' Runner.xcodeproj/project.pbxproj
           sed -i '' 's/DEVELOPMENT_TEAM = [^;]*/DEVELOPMENT_TEAM = ""/g' Runner.xcodeproj/project.pbxproj
-          
-          # 添加 CODE_SIGNING_REQUIRED = NO
-          echo "禁用签名要求..."
           
           cd ..
           echo "✅ 代码签名已禁用"
           echo "========================================="
       
-      # 步骤 8: 使用 xcodebuild 直接编译 (跳过 Flutter 的签名检查)
       - name: 编译 iOS 应用
         script: |
           echo "========================================="
@@ -137,7 +121,6 @@ workflows:
           
           cd ios
           
-          # 使用 xcodebuild 直接编译,完全跳过签名
           echo "开始编译 (这可能需要 5-10 分钟)..."
           xcodebuild -workspace Runner.xcworkspace \
             -scheme Runner \
@@ -158,12 +141,11 @@ workflows:
             echo ""
             echo "✅ 编译成功"
             
-            # 检查编译产物
             if [ -d "build/ios/Release-iphoneos/Runner.app" ]; then
               echo "✅ Runner.app 已生成"
               ls -lh build/ios/Release-iphoneos/Runner.app
             else
-              echo "❌ Runner.app 未找到,检查其他位置..."
+              echo "查找 Runner.app 位置..."
               find build/ios -name "Runner.app" -type d
             fi
           else
@@ -176,14 +158,12 @@ workflows:
           fi
           echo "========================================="
       
-      # 步骤 9: 打包 IPA
       - name: 打包为 IPA
         script: |
           echo "========================================="
           echo "📦 打包 IPA"
           echo "========================================="
           
-          # 查找 Runner.app 的实际位置
           APP_PATH=$(find build/ios -name "Runner.app" -type d | head -1)
           
           if [ -z "$APP_PATH" ]; then
@@ -195,7 +175,6 @@ workflows:
           
           echo "找到 Runner.app: $APP_PATH"
           
-          # 获取 Runner.app 所在目录
           BUILD_DIR=$(dirname "$APP_PATH")
           cd "$BUILD_DIR"
           
@@ -206,7 +185,6 @@ workflows:
           echo "打包为 IPA..."
           zip -r -q PureLive-TrollStore.ipa Payload
           
-          # 移动到根目录
           mv PureLive-TrollStore.ipa "$OLDPWD/"
           rm -rf Payload
           
@@ -229,7 +207,6 @@ workflows:
           fi
           echo "========================================="
       
-      # 步骤 10: 清理
       - name: 清理临时文件
         script: |
           if [ -f "pubspec.yaml.backup" ]; then
@@ -243,112 +220,6 @@ workflows:
           fi
           
           echo "✅ 清理完成"
-    
-    artifacts:
-      - PureLive-TrollStore.ipa
-      - "*.log"
-    
-    publishing:
-      email:
-        recipients:
-          - your-email@example.com
-        notify:
-          success: true
-          failure: true        script: |
-          echo "========================================="
-          echo "📦 安装 iOS 依赖"
-          echo "========================================="
-          cd ios
-          
-          echo "更新 CocoaPods 仓库..."
-          pod repo update
-          
-          echo ""
-          echo "安装 Pods (这可能需要几分钟)..."
-          pod install --repo-update --verbose 2>&1 | tee ../pod_install.log
-          INSTALL_EXIT_CODE=${PIPESTATUS[0]}
-          
-          if [ $INSTALL_EXIT_CODE -eq 0 ]; then
-            echo ""
-            echo "✅ Pods 安装成功"
-          else
-            echo ""
-            echo "❌ Pods 安装失败"
-            echo ""
-            echo "错误日志:"
-            tail -100 ../pod_install.log
-            exit 1
-          fi
-          
-          cd ..
-          echo "========================================="
-      
-      # 步骤 7: 编译 iOS 应用
-      - name: 编译 iOS 应用
-        script: |
-          echo "========================================="
-          echo "🔨 编译 iOS 应用"
-          echo "========================================="
-          
-          flutter build ios --release --no-codesign 2>&1 | tee flutter_build.log
-          BUILD_EXIT_CODE=${PIPESTATUS[0]}
-          
-          if [ $BUILD_EXIT_CODE -eq 0 ]; then
-            echo ""
-            echo "✅ 编译成功"
-            
-            if [ -d "build/ios/iphoneos/Runner.app" ]; then
-              echo "✅ Runner.app 已生成"
-              ls -lh build/ios/iphoneos/Runner.app
-            else
-              echo "❌ Runner.app 未找到"
-              exit 1
-            fi
-          else
-            echo ""
-            echo "❌ 编译失败"
-            tail -200 flutter_build.log
-            exit 1
-          fi
-          echo "========================================="
-      
-      # 步骤 8: 打包 IPA
-      - name: 打包为 IPA
-        script: |
-          echo "========================================="
-          echo "📦 打包 IPA"
-          echo "========================================="
-          
-          cd build/ios/iphoneos
-          mkdir -p Payload
-          cp -r Runner.app Payload/
-          zip -r -q PureLive-TrollStore.ipa Payload
-          mv PureLive-TrollStore.ipa ../../../
-          rm -rf Payload
-          cd ../../..
-          
-          if [ -f "PureLive-TrollStore.ipa" ]; then
-            echo ""
-            echo "✅ IPA 打包成功!"
-            echo ""
-            echo "📱 文件信息:"
-            ls -lh PureLive-TrollStore.ipa
-            echo ""
-            echo "🎉 可以用 TrollStore 安装了!"
-          else
-            echo "❌ IPA 未生成"
-            exit 1
-          fi
-          echo "========================================="
-      
-      # 步骤 9: 恢复 pubspec.yaml (如果修改过)
-      - name: 清理临时修改
-        script: |
-          if [ -f "pubspec.yaml.backup" ]; then
-            echo "恢复原始 pubspec.yaml..."
-            mv pubspec.yaml.backup pubspec.yaml
-            echo "✅ 已恢复"
-          fi
     
     artifacts:
       - PureLive-TrollStore.ipa
