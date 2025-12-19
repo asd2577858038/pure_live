@@ -58,7 +58,37 @@ workflows:
           fi
           echo "✅ 依赖获取成功"
       
-      - name: 步骤5 - 确保 Podfile 使用 CDN
+      - name: 步骤5 - 修复 share_handler_ios 问题
+        script: |
+          set -e
+          echo "🔧 修复 share_handler_ios podspec..."
+          
+          cd ios
+          
+          # 查找 share_handler_ios 的 podspec 文件
+          PODSPEC_PATH=".symlinks/plugins/share_handler_ios/ios/share_handler_ios.podspec"
+          
+          if [ -f "$PODSPEC_PATH" ]; then
+            echo "📄 找到 podspec: $PODSPEC_PATH"
+            
+            # 备份原文件
+            cp "$PODSPEC_PATH" "${PODSPEC_PATH}.backup"
+            
+            # 移除对 share_handler_ios_models 的依赖
+            # 使用 sed 删除包含 share_handler_ios_models 的行
+            sed -i.tmp '/share_handler_ios_models/d' "$PODSPEC_PATH"
+            rm -f "${PODSPEC_PATH}.tmp"
+            
+            echo "✅ 已移除 share_handler_ios_models 依赖"
+            echo "📄 修改后的 podspec:"
+            cat "$PODSPEC_PATH"
+          else
+            echo "⚠️ 未找到 share_handler_ios podspec，跳过修复"
+          fi
+          
+          cd ..
+      
+      - name: 步骤6 - 确保 Podfile 使用 CDN
         script: |
           set -e
           cd ios
@@ -81,18 +111,116 @@ workflows:
           cd ..
           echo "✅ Podfile 配置完成"
       
-      - name: 步骤6 - 生成 Flutter 插件注册
+      - name: 步骤7 - 手动运行 pod install
         script: |
           set -e
-          echo "🔧 生成 Flutter 插件注册..."
-          
-          # 重新生成插件注册文件
           cd ios
-          flutter pub get
-          cd ..
           
-          # 验证 GeneratedPluginRegistrant.m
-          if [ ! -f "ios/Runner/GeneratedPluginRegistrant.m" ]; then
+          echo "📦 手动安装 CocoaPods 依赖..."
+          echo "⏰ 这可能需要几分钟..."
+          
+          # 手动运行 pod install
+          pod install --repo-update --verbose 2>&1 | tee pod_install.log
+          
+          # 检查是否成功
+          if [ ! -d "Pods" ]; then
+            echo "❌ Pod 安装失败"
+            echo "📄 最后100行日志:"
+            tail -100 pod_install.log
+            exit 1
+          fi
+          
+          if [ ! -f "Runner.xcworkspace/contents.xcworkspacedata" ]; then
+            echo "❌ Workspace 创建失败"
+            exit 1
+          fi
+          
+          echo "✅ Pod 安装成功"
+          echo "📂 Pods 目录:"
+          ls -la Pods/ | head -20
+          
+          cd ..
+      
+      - name: 步骤8 - 使用 flutter build 构建
+        script: |
+          set -e
+          
+          echo "🔨 使用 Flutter 构建 iOS..."
+          
+          # 使用 flutter build 确保所有东西都正确
+          flutter build ios \
+            --release \
+            --no-codesign \
+            --verbose \
+            2>&1 | tee flutter_build.log
+          
+          # 检查构建是否成功
+          if [ ! -d "build/ios/iphoneos/Runner.app" ]; then
+            echo "❌ 构建失败 - Runner.app 不存在"
+            echo "📄 最后100行日志:"
+            tail -100 flutter_build.log
+            exit 1
+          fi
+          
+          echo "✅ 构建成功"
+          echo "📂 构建产物:"
+          ls -lh build/ios/iphoneos/Runner.app
+      
+      - name: 步骤9 - 打包 IPA
+        script: |
+          set -e
+          
+          echo "📦 打包 IPA..."
+          
+          PROJECT_ROOT=$(pwd)
+          BUILD_DIR="$PROJECT_ROOT/build/ios/iphoneos"
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          IPA_NAME="PureLive_${TIMESTAMP}.ipa"
+          
+          # 验证 app 存在
+          if [ ! -d "$BUILD_DIR/Runner.app" ]; then
+            echo "❌ Runner.app 不存在"
+            exit 1
+          fi
+          
+          cd "$BUILD_DIR"
+          
+          # 创建 Payload
+          rm -rf Payload
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          
+          # 打包
+          echo "🗜️  压缩..."
+          zip -r "$PROJECT_ROOT/$IPA_NAME" Payload -q
+          
+          cd "$PROJECT_ROOT"
+          
+          # 验证
+          if [ ! -f "$IPA_NAME" ]; then
+            echo "❌ IPA 打包失败"
+            exit 1
+          fi
+          
+          # 创建固定名称副本
+          cp "$IPA_NAME" PureLive.ipa
+          
+          echo "✅ 打包成功!"
+          echo "📦 产物列表:"
+          ls -lh *.ipa
+    
+    artifacts:
+      - "*.ipa"
+      - "ios/pod_install.log"
+      - "flutter_build.log"
+    
+    publishing:
+      email:
+        recipients:
+          - your-email@example.com
+        notify:
+          success: true
+          failure: true          if [ ! -f "ios/Runner/GeneratedPluginRegistrant.m" ]; then
             echo "❌ GeneratedPluginRegistrant.m 未生成"
             exit 1
           fi
