@@ -37,11 +37,9 @@ workflows:
           set -e
           echo "🔄 完全重建 CocoaPods specs..."
           
-          # 删除所有 CocoaPods 缓存和仓库
           rm -rf ~/.cocoapods
           rm -rf ~/Library/Caches/CocoaPods
           
-          # 重新初始化（会从 CDN 下载最新 specs）
           pod setup
           
           echo "✅ CocoaPods 重建完成"
@@ -65,17 +63,13 @@ workflows:
           
           cd ios
           
-          # 查找 share_handler_ios 的 podspec 文件
           PODSPEC_PATH=".symlinks/plugins/share_handler_ios/ios/share_handler_ios.podspec"
           
           if [ -f "$PODSPEC_PATH" ]; then
             echo "📄 找到 podspec: $PODSPEC_PATH"
             
-            # 备份原文件
             cp "$PODSPEC_PATH" "${PODSPEC_PATH}.backup"
             
-            # 移除对 share_handler_ios_models 的依赖
-            # 使用 sed 删除包含 share_handler_ios_models 的行
             sed -i.tmp '/share_handler_ios_models/d' "$PODSPEC_PATH"
             rm -f "${PODSPEC_PATH}.tmp"
             
@@ -93,6 +87,123 @@ workflows:
           set -e
           cd ios
           
+          echo "📝 配置 Podfile..."
+          
+          cp Podfile Podfile.backup
+          
+          if ! grep -q "source 'https://cdn.cocoapods.org/'" Podfile; then
+            echo "添加 CDN 源到 Podfile..."
+            echo "source 'https://cdn.cocoapods.org/'" | cat - Podfile > Podfile.tmp
+            mv Podfile.tmp Podfile
+          fi
+          
+          echo "📄 Podfile 前10行:"
+          head -10 Podfile
+          
+          cd ..
+          echo "✅ Podfile 配置完成"
+      
+      - name: 步骤7 - 手动运行 pod install
+        script: |
+          set -e
+          cd ios
+          
+          echo "📦 手动安装 CocoaPods 依赖..."
+          echo "⏰ 这可能需要几分钟..."
+          
+          pod install --repo-update --verbose 2>&1 | tee pod_install.log
+          
+          if [ ! -d "Pods" ]; then
+            echo "❌ Pod 安装失败"
+            echo "📄 最后100行日志:"
+            tail -100 pod_install.log
+            exit 1
+          fi
+          
+          if [ ! -f "Runner.xcworkspace/contents.xcworkspacedata" ]; then
+            echo "❌ Workspace 创建失败"
+            exit 1
+          fi
+          
+          echo "✅ Pod 安装成功"
+          echo "📂 Pods 目录:"
+          ls -la Pods/ | head -20
+          
+          cd ..
+      
+      - name: 步骤8 - 使用 flutter build 构建
+        script: |
+          set -e
+          
+          echo "🔨 使用 Flutter 构建 iOS..."
+          
+          flutter build ios \
+            --release \
+            --no-codesign \
+            --verbose \
+            2>&1 | tee flutter_build.log
+          
+          if [ ! -d "build/ios/iphoneos/Runner.app" ]; then
+            echo "❌ 构建失败 - Runner.app 不存在"
+            echo "📄 最后100行日志:"
+            tail -100 flutter_build.log
+            exit 1
+          fi
+          
+          echo "✅ 构建成功"
+          echo "📂 构建产物:"
+          ls -lh build/ios/iphoneos/Runner.app
+      
+      - name: 步骤9 - 打包 IPA
+        script: |
+          set -e
+          
+          echo "📦 打包 IPA..."
+          
+          PROJECT_ROOT=$(pwd)
+          BUILD_DIR="$PROJECT_ROOT/build/ios/iphoneos"
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          IPA_NAME="PureLive_${TIMESTAMP}.ipa"
+          
+          if [ ! -d "$BUILD_DIR/Runner.app" ]; then
+            echo "❌ Runner.app 不存在"
+            exit 1
+          fi
+          
+          cd "$BUILD_DIR"
+          
+          rm -rf Payload
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          
+          echo "🗜️  压缩..."
+          zip -r "$PROJECT_ROOT/$IPA_NAME" Payload -q
+          
+          cd "$PROJECT_ROOT"
+          
+          if [ ! -f "$IPA_NAME" ]; then
+            echo "❌ IPA 打包失败"
+            exit 1
+          fi
+          
+          cp "$IPA_NAME" PureLive.ipa
+          
+          echo "✅ 打包成功!"
+          echo "📦 产物列表:"
+          ls -lh *.ipa
+    
+    artifacts:
+      - "*.ipa"
+      - "ios/pod_install.log"
+      - "flutter_build.log"
+    
+    publishing:
+      email:
+        recipients:
+          - your-email@example.com
+        notify:
+          success: true
+          failure: true          
           echo "📝 配置 Podfile..."
           
           # 备份
