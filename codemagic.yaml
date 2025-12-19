@@ -91,9 +91,10 @@ workflows:
           
           cp Podfile Podfile.backup
           
-          if ! grep -q "source 'https://cdn.cocoapods.org/'" Podfile; then
+          CDN_SOURCE="source 'https://cdn.cocoapods.org/'"
+          if ! grep -q "$CDN_SOURCE" Podfile; then
             echo "添加 CDN 源到 Podfile..."
-            echo "source 'https://cdn.cocoapods.org/'" | cat - Podfile > Podfile.tmp
+            echo "$CDN_SOURCE" | cat - Podfile > Podfile.tmp
             mv Podfile.tmp Podfile
           fi
           
@@ -197,72 +198,6 @@ workflows:
       - "ios/pod_install.log"
       - "flutter_build.log"
     
-    publishing:
-      email:
-        recipients:
-          - your-email@example.com
-        notify:
-          success: true
-          failure: true            sed -i '' "1i\\
-          source 'https://cdn.cocoapods.org/'\\
-          " Podfile
-          fi
-          
-          echo "当前 Podfile 内容:"
-          cat Podfile
-          
-      - name: 步骤7 - 执行 pod install
-        script: | 
-          echo "=== 执行 pod install ==="
-          cd ios
-          
-          # 使用详细模式和仓库更新
-          pod install --repo-update --verbose
-          
-          if [ $? -eq 0 ]; then
-            echo "✓ pod install 成功"
-          else
-            echo "✗ pod install 失败，尝试备用方案..."
-            
-            # 备用方案：完全重建
-            rm -rf Pods Podfile.lock
-            pod deintegrate
-            pod setup
-            pod install --repo-update --verbose
-          fi
-          
-      - name: 步骤8 - 构建 iOS 应用
-        script: | 
-          echo "=== 构建 iOS 应用 ==="
-          
-          # 使用 Flutter 构建
-          flutter build ios --release --no-codesign --verbose
-          
-          if [ $? -eq 0 ]; then
-            echo "✓ iOS 构建成功"
-            ls -lh build/ios/iphoneos/
-          else
-            echo "✗ iOS 构建失败"
-            exit 1
-          fi
-          
-      - name: 步骤9 - 验证构建产物
-        script: | 
-          echo "=== 验证构建产物 ==="
-          
-          if [ -d "build/ios/iphoneos/Runner.app" ]; then
-            echo "✓ Runner.app 存在"
-            ls -lh build/ios/iphoneos/Runner.app
-          else
-            echo "✗ Runner.app 不存在"
-            exit 1
-          fi
-          
-    artifacts:
-      - build/ios/iphoneos/*.app
-      - build/ios/iphoneos/*.ipa
-      - flutter_drive.log
-      
     publishing:
       email:
         recipients:
