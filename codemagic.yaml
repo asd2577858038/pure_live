@@ -1,98 +1,209 @@
 workflows:
-  ios-workflow:
-    name: iOS Workflow
+  ios-trollstore:
+    name: 构建 iOS IPA (TrollStore 版)
     max_build_duration: 120
-    instance_type: mac_mini_m1
+    instance_type: mac_mini_m2
+    
     environment:
-      ios_signing:
-        distribution_type: development
-        bundle_identifier: com.mystyle.pureLive
-      vars:
-        XCODE_WORKSPACE: "Runner.xcworkspace"
-        XCODE_SCHEME: "Runner"
       flutter: stable
       xcode: latest
       cocoapods: default
+      vars:
+        COCOAPODS_DISABLE_STATS: "true"
+    
     scripts:
       - name: 步骤1 - 环境信息
-        script: | 
-          echo "=== 环境信息 ==="
-          echo "Flutter 版本:"
+        script: |
+          set -e
+          echo "构建环境信息..."
           flutter --version
-          echo ""
-          echo "Xcode 版本:"
           xcodebuild -version
-          echo ""
-          echo "CocoaPods 版本:"
           pod --version
-          echo ""
-          echo "Ruby 版本:"
           ruby --version
+          echo "环境检查完成"
           
-      - name: 步骤2 - 彻底清理环境
-        script: | 
-          echo "=== 清理构建环境 ==="
+      - name: 步骤2 - 清理环境
+        script: |
+          set -e
+          echo "清理构建环境..."
           flutter clean
-          rm -rf ios/Pods
-          rm -rf ios/Podfile.lock
-          rm -rf ios/.symlinks
-          rm -rf ios/Flutter/Flutter.framework
-          rm -rf ios/Flutter/Flutter.podspec
-          rm -rf ~/Library/Caches/CocoaPods
-          rm -rf ~/.cocoapods/repos/trunk
+          cd ios
+          rm -rf Pods Podfile.lock .symlinks build DerivedData
+          cd ..
           echo "清理完成"
+      
+      - name: 步骤3 - 完全重建 CocoaPods
+        script: |
+          set -e
+          echo "完全重建 CocoaPods specs..."
           
-      - name: 步骤3 - 获取 Flutter 依赖
-        script: | 
-          echo "=== 获取 Flutter 依赖 ==="
+          rm -rf ~/.cocoapods
+          rm -rf ~/Library/Caches/CocoaPods
+          
+          pod setup
+          
+          echo "CocoaPods 重建完成"
+      
+      - name: 步骤4 - 获取 Flutter 依赖
+        script: |
+          set -e
+          echo "获取 Flutter 依赖..."
           flutter pub get
-          flutter pub upgrade
           
-      - name: 步骤4 - 重建 CocoaPods 仓库
-        script: | 
-          echo "=== 设置 CocoaPods 仓库 ==="
+          if [ ! -d ".dart_tool" ]; then
+            echo "依赖获取失败"
+            exit 1
+          fi
+          echo "依赖获取成功"
+      
+      - name: 步骤5 - 修复 share_handler_ios 问题
+        script: |
+          set -e
+          echo "修复 share_handler_ios podspec..."
+          
           cd ios
           
-          # 移除旧仓库
-          pod repo remove trunk 2>/dev/null || true
+          PODSPEC_PATH=".symlinks/plugins/share_handler_ios/ios/share_handler_ios.podspec"
           
-          # 添加 CDN 源
-          echo "添加 CocoaPods CDN 源..."
-          pod repo add-cdn trunk https://cdn.cocoapods.org/
-          
-          # 更新仓库
-          echo "更新 CocoaPods 仓库..."
-          pod repo update
-          
-          echo "CocoaPods 仓库设置完成"
-          
-      - name: 步骤5 - 检查并修复插件
-        script: | 
-          echo "=== 检查 Flutter 插件 ==="
-          
-          # 列出所有插件
-          flutter pub deps
-          
-          # 检查 share_handler_ios 插件
-          if [ -d ".symlinks/plugins/share_handler_ios" ]; then
-            echo "✓ share_handler_ios 插件存在"
-            ls -la .symlinks/plugins/share_handler_ios/
+          if [ -f "$PODSPEC_PATH" ]; then
+            echo "找到 podspec: $PODSPEC_PATH"
+            
+            cp "$PODSPEC_PATH" "${PODSPEC_PATH}.backup"
+            
+            sed -i.tmp '/share_handler_ios_models/d' "$PODSPEC_PATH"
+            rm -f "${PODSPEC_PATH}.tmp"
+            
+            echo "已移除 share_handler_ios_models 依赖"
+            echo "修改后的 podspec:"
+            cat "$PODSPEC_PATH"
           else
-            echo "✗ share_handler_ios 插件不存在"
+            echo "未找到 share_handler_ios podspec，跳过修复"
           fi
           
-          # 重新生成插件注册
-          flutter pub get
-          
-      - name: 步骤6 - 配置 Podfile
-        script: | 
-          echo "=== 配置 Podfile ==="
+          cd ..
+      
+      - name: 步骤6 - 确保 Podfile 使用 CDN
+        script: |
+          set -e
           cd ios
           
-          # 确保使用 CDN 源
+          echo "配置 Podfile..."
+          
+          cp Podfile Podfile.backup
+          
           if ! grep -q "source 'https://cdn.cocoapods.org/'" Podfile; then
             echo "添加 CDN 源到 Podfile..."
-            sed -i '' "1i\\
+            echo "source 'https://cdn.cocoapods.org/'" | cat - Podfile > Podfile.tmp
+            mv Podfile.tmp Podfile
+          fi
+          
+          echo "Podfile 前10行:"
+          head -10 Podfile
+          
+          cd ..
+          echo "Podfile 配置完成"
+      
+      - name: 步骤7 - 手动运行 pod install
+        script: |
+          set -e
+          cd ios
+          
+          echo "手动安装 CocoaPods 依赖..."
+          echo "这可能需要几分钟..."
+          
+          pod install --repo-update --verbose 2>&1 | tee pod_install.log
+          
+          if [ ! -d "Pods" ]; then
+            echo "Pod 安装失败"
+            echo "最后100行日志:"
+            tail -100 pod_install.log
+            exit 1
+          fi
+          
+          if [ ! -f "Runner.xcworkspace/contents.xcworkspacedata" ]; then
+            echo "Workspace 创建失败"
+            exit 1
+          fi
+          
+          echo "Pod 安装成功"
+          echo "Pods 目录:"
+          ls -la Pods/ | head -20
+          
+          cd ..
+      
+      - name: 步骤8 - 使用 flutter build 构建
+        script: |
+          set -e
+          
+          echo "使用 Flutter 构建 iOS..."
+          
+          flutter build ios \
+            --release \
+            --no-codesign \
+            --verbose \
+            2>&1 | tee flutter_build.log
+          
+          if [ ! -d "build/ios/iphoneos/Runner.app" ]; then
+            echo "构建失败 - Runner.app 不存在"
+            echo "最后100行日志:"
+            tail -100 flutter_build.log
+            exit 1
+          fi
+          
+          echo "构建成功"
+          echo "构建产物:"
+          ls -lh build/ios/iphoneos/Runner.app
+      
+      - name: 步骤9 - 打包 IPA
+        script: |
+          set -e
+          
+          echo "打包 IPA..."
+          
+          PROJECT_ROOT=$(pwd)
+          BUILD_DIR="$PROJECT_ROOT/build/ios/iphoneos"
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          IPA_NAME="PureLive_${TIMESTAMP}.ipa"
+          
+          if [ ! -d "$BUILD_DIR/Runner.app" ]; then
+            echo "Runner.app 不存在"
+            exit 1
+          fi
+          
+          cd "$BUILD_DIR"
+          
+          rm -rf Payload
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          
+          echo "压缩..."
+          zip -r "$PROJECT_ROOT/$IPA_NAME" Payload -q
+          
+          cd "$PROJECT_ROOT"
+          
+          if [ ! -f "$IPA_NAME" ]; then
+            echo "IPA 打包失败"
+            exit 1
+          fi
+          
+          cp "$IPA_NAME" PureLive.ipa
+          
+          echo "打包成功!"
+          echo "产物列表:"
+          ls -lh *.ipa
+    
+    artifacts:
+      - "*.ipa"
+      - "ios/pod_install.log"
+      - "flutter_build.log"
+    
+    publishing:
+      email:
+        recipients:
+          - your-email@example.com
+        notify:
+          success: true
+          failure: true            sed -i '' "1i\\
           source 'https://cdn.cocoapods.org/'\\
           " Podfile
           fi
