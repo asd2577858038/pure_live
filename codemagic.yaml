@@ -59,28 +59,76 @@ workflows:
       - name: 步骤5 - 修复 share_handler_ios 问题
         script: |
           set -e
-          echo "修复 share_handler_ios podspec..."
+          echo "=== 开始修复 share_handler_ios 问题 ==="
           
           cd ios
           
+          # 方法1: 修改 podspec 文件
           PODSPEC_PATH=".symlinks/plugins/share_handler_ios/ios/share_handler_ios.podspec"
           
           if [ -f "$PODSPEC_PATH" ]; then
-            echo "找到 podspec: $PODSPEC_PATH"
+            echo "✓ 找到 podspec: $PODSPEC_PATH"
             
+            # 备份原文件
             cp "$PODSPEC_PATH" "${PODSPEC_PATH}.backup"
+            echo "✓ 已备份 podspec 文件"
             
+            # 删除包含 share_handler_ios_models 的行
             sed -i.tmp '/share_handler_ios_models/d' "$PODSPEC_PATH"
             rm -f "${PODSPEC_PATH}.tmp"
             
-            echo "已移除 share_handler_ios_models 依赖"
-            echo "修改后的 podspec:"
+            echo "✓ 已移除 share_handler_ios_models 依赖"
+            echo ""
+            echo "修改后的 podspec 内容:"
+            echo "================================"
             cat "$PODSPEC_PATH"
+            echo "================================"
           else
-            echo "未找到 share_handler_ios podspec，跳过修复"
+            echo "⚠ 未找到 share_handler_ios podspec，跳过修改"
+          fi
+          
+          echo ""
+          
+          # 方法2: 清理 Podfile.lock（如果存在）
+          if [ -f "Podfile.lock" ]; then
+            echo "✓ 找到 Podfile.lock，清理其中的引用..."
+            sed -i.tmp '/share_handler_ios_models/d' "Podfile.lock"
+            rm -f "Podfile.lock.tmp"
+            echo "✓ Podfile.lock 已清理"
+          else
+            echo "• Podfile.lock 不存在，跳过"
+          fi
+          
+          echo ""
+          
+          # 方法3: 清理 Pod 缓存
+          echo "开始清理 Pod 缓存..."
+          
+          if [ -d "$HOME/Library/Caches/CocoaPods" ]; then
+            rm -rf "$HOME/Library/Caches/CocoaPods"
+            echo "✓ 已清理 CocoaPods 缓存"
+          else
+            echo "• CocoaPods 缓存目录不存在"
+          fi
+          
+          if [ -d "Pods" ]; then
+            rm -rf Pods
+            echo "✓ 已删除 Pods 目录"
+          else
+            echo "• Pods 目录不存在"
+          fi
+          
+          if [ -d ".symlinks/plugins/share_handler_ios/ios/.symlinks" ]; then
+            rm -rf .symlinks/plugins/share_handler_ios/ios/.symlinks
+            echo "✓ 已清理 share_handler_ios 的 symlinks"
+          else
+            echo "• share_handler_ios symlinks 不存在"
           fi
           
           cd ..
+          
+          echo ""
+          echo "=== 修复完成 ==="
       
       - name: 步骤6 - 确保 Podfile 使用 CDN
         script: |
