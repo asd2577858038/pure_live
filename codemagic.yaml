@@ -1,6 +1,6 @@
 workflows:
   ios-trollstore:
-    name: 构建 iOS IPA (TrollStore 终极修复版)
+    name: PureLive TrollStore Build
     max_build_duration: 60
     instance_type: mac_mini_m2
     
@@ -10,27 +10,15 @@ workflows:
       cocoapods: default
     
     scripts:
-      # 第1步: 清理与获取依赖
-      - name: 第1步 - 清理与获取依赖
+      - name: 第1步 - 获取依赖
         script: |
-          echo "🧹 开始深度清理..."
           flutter clean
-          rm -rf ios/Pods
-          rm -rf ios/Podfile.lock
-          rm -rf ios/.symlinks
-          
-          echo "📦 获取 Flutter 依赖..."
-          flutter pub upgrade
           flutter pub get
+          flutter precache --ios
 
-      # 第2步: 修正 Podfile (防止 iOS 版本报错)
-      - name: 第2步 - 修正 Podfile 配置
+      - name: 第2步 - 注入 Podfile 修复脚本
         script: |
-          echo "🔧 正在修正 iOS Deployment Target..."
           cd ios
-          
-          # 使用 echo 追加配置，避免缩进问题
-          echo "" >> Podfile
           echo "post_install do |installer|" >> Podfile
           echo "  installer.pods_project.targets.each do |target|" >> Podfile
           echo "    target.build_configurations.each do |config|" >> Podfile
@@ -40,40 +28,29 @@ workflows:
           echo "  end" >> Podfile
           echo "end" >> Podfile
 
-      # 第3步: 安装 iOS 依赖
       - name: 第3步 - 安装 Pods
         script: |
-          echo "🥥 安装 CocoaPods..."
           cd ios
           pod repo update
           pod install --repo-update
 
-      # 第4步: 编译 iOS
-      - name: 第4步 - 编译 iOS
+      - name: 第4步 - 编译应用
         script: |
-          echo "🔨 开始编译..."
           flutter build ios --release --no-codesign
 
-      # 第5步: 打包 IPA (扁平化逻辑，修复缩进报错)
       - name: 第5步 - 打包 IPA
         script: |
-          echo "📦 正在打包..."
           PROJECT_ROOT=$(pwd)
           BUILD_DIR="$PROJECT_ROOT/build/ios/iphoneos"
-          
-          # 检查目录是否存在，不存在直接退出 (不使用 else，避免缩进错误)
-          if [ ! -d "$BUILD_DIR/Runner.app" ]; then
-            echo "❌ 错误：找不到 Runner.app"
+          if [ -d "$BUILD_DIR/Runner.app" ]; then
+            cd "$BUILD_DIR"
+            mkdir -p Payload
+            cp -r Runner.app Payload/
+            zip -r "$PROJECT_ROOT/PureLive.ipa" Payload
+          else
+            echo "Build product not found"
             exit 1
           fi
-          
-          # 如果上面没退出，说明文件存在，继续执行
-          cd "$BUILD_DIR"
-          mkdir -p Payload
-          cp -r Runner.app Payload/
-          zip -r "$PROJECT_ROOT/PureLive.ipa" Payload
-          
-          echo "✅ IPA 打包成功！"
 
     artifacts:
       - "*.ipa"
@@ -82,16 +59,6 @@ workflows:
       email:
         recipients:
           - your-email@example.com
-        notify:
-          success: true
-          failure: true
-      
-      - name: 编译 iOS 应用
-        script: |
-          echo "========================================="
-          echo "🔨 使用 xcodebuild 编译"
-          echo "========================================="
-          
           cd ios
           
           echo "开始编译 (这可能需要 5-10 分钟)..."
