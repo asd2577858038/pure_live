@@ -1,51 +1,161 @@
 workflows:
-  ios-trollstore:
-    name: PureLive TrollStore Build
-    max_build_duration: 60
-    instance_type: mac_mini_m2
-    
+  ios-workflow:
+    name: iOS Workflow
+    max_build_duration: 120
+    instance_type: mac_mini_m1
     environment:
+      ios_signing:
+        distribution_type: development
+        bundle_identifier: com.mystyle.pureLive
+      vars:
+        XCODE_WORKSPACE: "Runner.xcworkspace"
+        XCODE_SCHEME: "Runner"
       flutter: stable
       xcode: latest
       cocoapods: default
-    
     scripts:
-      - name: 第1步 - 获取依赖
-        script: flutter clean && flutter pub get && flutter precache --ios
-
-      - name: 第2步 - 注入 Podfile 修复脚本
-        script: |
+      - name: 步骤1 - 环境信息
+        script: | 
+          echo "=== 环境信息 ==="
+          echo "Flutter 版本:"
+          flutter --version
+          echo ""
+          echo "Xcode 版本:"
+          xcodebuild -version
+          echo ""
+          echo "CocoaPods 版本:"
+          pod --version
+          echo ""
+          echo "Ruby 版本:"
+          ruby --version
+          
+      - name: 步骤2 - 彻底清理环境
+        script: | 
+          echo "=== 清理构建环境 ==="
+          flutter clean
+          rm -rf ios/Pods
+          rm -rf ios/Podfile.lock
+          rm -rf ios/.symlinks
+          rm -rf ios/Flutter/Flutter.framework
+          rm -rf ios/Flutter/Flutter.podspec
+          rm -rf ~/Library/Caches/CocoaPods
+          rm -rf ~/.cocoapods/repos/trunk
+          echo "清理完成"
+          
+      - name: 步骤3 - 获取 Flutter 依赖
+        script: | 
+          echo "=== 获取 Flutter 依赖 ==="
+          flutter pub get
+          flutter pub upgrade
+          
+      - name: 步骤4 - 重建 CocoaPods 仓库
+        script: | 
+          echo "=== 设置 CocoaPods 仓库 ==="
           cd ios
-          echo "post_install do |installer|" >> Podfile
-          echo "  installer.pods_project.targets.each do |target|" >> Podfile
-          echo "    target.build_configurations.each do |config|" >> Podfile
-          echo "      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'" >> Podfile
-          echo "      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'" >> Podfile
-          echo "    end" >> Podfile
-          echo "  end" >> Podfile
-          echo "end" >> Podfile
-
-      - name: 第3步 - 安装 Pods
-        script: cd ios && pod repo update && pod install --repo-update
-
-      - name: 第4步 - 编译应用
-        script: flutter build ios --release --no-codesign
-
-      - name: 第5步 - 打包 IPA
-        script: |
-          export PROJECT_ROOT=$(pwd)
-          export BUILD_DIR="$PROJECT_ROOT/build/ios/iphoneos"
-          cd "$BUILD_DIR"
-          mkdir -p Payload
-          cp -r Runner.app Payload/
-          zip -r "$PROJECT_ROOT/PureLive.ipa" Payload
-          cd "$PROJECT_ROOT"
-          ls -lh PureLive.ipa
-
+          
+          # 移除旧仓库
+          pod repo remove trunk 2>/dev/null || true
+          
+          # 添加 CDN 源
+          echo "添加 CocoaPods CDN 源..."
+          pod repo add-cdn trunk https://cdn.cocoapods.org/
+          
+          # 更新仓库
+          echo "更新 CocoaPods 仓库..."
+          pod repo update
+          
+          echo "CocoaPods 仓库设置完成"
+          
+      - name: 步骤5 - 检查并修复插件
+        script: | 
+          echo "=== 检查 Flutter 插件 ==="
+          
+          # 列出所有插件
+          flutter pub deps
+          
+          # 检查 share_handler_ios 插件
+          if [ -d ".symlinks/plugins/share_handler_ios" ]; then
+            echo "✓ share_handler_ios 插件存在"
+            ls -la .symlinks/plugins/share_handler_ios/
+          else
+            echo "✗ share_handler_ios 插件不存在"
+          fi
+          
+          # 重新生成插件注册
+          flutter pub get
+          
+      - name: 步骤6 - 配置 Podfile
+        script: | 
+          echo "=== 配置 Podfile ==="
+          cd ios
+          
+          # 确保使用 CDN 源
+          if ! grep -q "source 'https://cdn.cocoapods.org/'" Podfile; then
+            echo "添加 CDN 源到 Podfile..."
+            sed -i '' "1i\\
+          source 'https://cdn.cocoapods.org/'\\
+          " Podfile
+          fi
+          
+          echo "当前 Podfile 内容:"
+          cat Podfile
+          
+      - name: 步骤7 - 执行 pod install
+        script: | 
+          echo "=== 执行 pod install ==="
+          cd ios
+          
+          # 使用详细模式和仓库更新
+          pod install --repo-update --verbose
+          
+          if [ $? -eq 0 ]; then
+            echo "✓ pod install 成功"
+          else
+            echo "✗ pod install 失败，尝试备用方案..."
+            
+            # 备用方案：完全重建
+            rm -rf Pods Podfile.lock
+            pod deintegrate
+            pod setup
+            pod install --repo-update --verbose
+          fi
+          
+      - name: 步骤8 - 构建 iOS 应用
+        script: | 
+          echo "=== 构建 iOS 应用 ==="
+          
+          # 使用 Flutter 构建
+          flutter build ios --release --no-codesign --verbose
+          
+          if [ $? -eq 0 ]; then
+            echo "✓ iOS 构建成功"
+            ls -lh build/ios/iphoneos/
+          else
+            echo "✗ iOS 构建失败"
+            exit 1
+          fi
+          
+      - name: 步骤9 - 验证构建产物
+        script: | 
+          echo "=== 验证构建产物 ==="
+          
+          if [ -d "build/ios/iphoneos/Runner.app" ]; then
+            echo "✓ Runner.app 存在"
+            ls -lh build/ios/iphoneos/Runner.app
+          else
+            echo "✗ Runner.app 不存在"
+            exit 1
+          fi
+          
     artifacts:
-      - "*.ipa"
-
+      - build/ios/iphoneos/*.app
+      - build/ios/iphoneos/*.ipa
+      - flutter_drive.log
+      
     publishing:
       email:
         recipients:
           - your-email@example.com
+        notify:
+          success: true
+          failure: true
