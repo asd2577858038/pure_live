@@ -103,10 +103,16 @@ workflows:
           
           cd ..
           echo "Podfile 配置完成"
-      echo "步骤6.5 - 更新 CocoaPods 仓库"
-         cd ios
-         pod repo update
+      
+      - name: 步骤6.5 - 更新 CocoaPods 仓库
+        script: |
+          set -e
+          echo "更新 CocoaPods 仓库..."
+          cd ios
+          pod repo update
           cd ..
+          echo "更新完成"
+      
       - name: 步骤7 - 手动运行 pod install
         script: |
           set -e
@@ -180,6 +186,21 @@ workflows:
           mkdir -p Payload
           cp -r Runner.app Payload/
           
+          echo "压缩..."
+          zip -r "$PROJECT_ROOT/$IPA_NAME" Payload -q
+          
+          cd "$PROJECT_ROOT"
+          
+          if [ ! -f "$IPA_NAME" ]; then
+            echo "IPA 打包失败"
+            exit 1
+          fi
+          
+          cp "$IPA_NAME" PureLive.ipa
+          
+          echo "打包成功!"
+          echo "产物列表:"
+          ls -lh *.ipa          
           echo "压缩..."
           zip -r "$PROJECT_ROOT/$IPA_NAME" Payload -q
           
