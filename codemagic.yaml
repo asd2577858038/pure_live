@@ -1,7 +1,7 @@
 workflows:
-  # 诊断构建 - 找出问题所在
-  ios-diagnostic:
-    name: iOS 诊断构建
+  # iOS TrollStore 构建 - 最终优化版
+  ios-trollstore-build:
+    name: iOS TrollStore 构建
     max_build_duration: 60
     instance_type: mac_mini_m2
     
@@ -9,155 +9,162 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
+      vars:
+        # 设置 CocoaPods 使用 CDN
+        COCOAPODS_TRUNK_URL: "https://cdn.cocoapods.org/"
     
     scripts:
-      # 步骤 1: 检查环境
-      - name: 步骤1 - 检查环境
+      # 步骤 1: 环境准备
+      - name: 环境检查
         script: |
           echo "========================================="
-          echo "环境信息检查"
+          echo "🔍 检查构建环境"
           echo "========================================="
-          echo "Flutter 版本:"
           flutter --version
-          echo ""
-          echo "CocoaPods 版本:"
           pod --version
-          echo ""
-          echo "Xcode 版本:"
           xcodebuild -version
-          echo ""
-          echo "Ruby 版本:"
-          ruby --version
-          echo ""
-          echo "当前目录:"
-          pwd
-          echo ""
-          echo "文件列表:"
-          ls -la
+          echo "当前目录: $(pwd)"
           echo "========================================="
       
-      # 步骤 2: 获取依赖
-      - name: 步骤2 - 获取 Flutter 依赖
+      # 步骤 2: Flutter 清理和依赖获取
+      - name: Flutter 准备
         script: |
           echo "========================================="
-          echo "获取 Flutter 依赖"
-          echo "========================================="
-          flutter pub get
-          EXIT_CODE=$?
-          if [ $EXIT_CODE -eq 0 ]; then
-            echo "✅ Flutter 依赖获取成功"
-          else
-            echo "❌ Flutter 依赖获取失败,退出码: $EXIT_CODE"
-            exit 1
-          fi
-          echo "========================================="
-      
-      # 步骤 3: 检查 iOS 目录
-      - name: 步骤3 - 检查 iOS 配置
-        script: |
-          echo "========================================="
-          echo "检查 iOS 目录和配置"
+          echo "📦 准备 Flutter 依赖"
           echo "========================================="
           
-          if [ -d "ios" ]; then
-            echo "✅ ios 目录存在"
-            echo ""
-            echo "iOS 目录内容:"
-            ls -la ios/
-            echo ""
-            
-            if [ -f "ios/Podfile" ]; then
-              echo "✅ Podfile 存在"
-              echo ""
-              echo "Podfile 内容:"
-              cat ios/Podfile
-            else
-              echo "❌ Podfile 不存在"
-            fi
-            
-            echo ""
-            if [ -f "ios/Runner.xcodeproj/project.pbxproj" ]; then
-              echo "✅ Xcode 项目文件存在"
-            else
-              echo "❌ Xcode 项目文件不存在"
-            fi
+          # 清理之前的构建
+          echo "清理旧构建..."
+          flutter clean
+          
+          # 获取依赖
+          echo "获取 Flutter 依赖..."
+          flutter pub get
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Flutter 依赖准备完成"
           else
-            echo "❌ ios 目录不存在!"
+            echo "❌ Flutter 依赖获取失败"
             exit 1
           fi
           echo "========================================="
       
-      # 步骤 4: 清理缓存
-      - name: 步骤4 - 清理 CocoaPods 缓存
+      # 步骤 3: 深度清理 CocoaPods
+      - name: 深度清理 CocoaPods
         script: |
           echo "========================================="
-          echo "清理 CocoaPods 缓存"
+          echo "🧹 深度清理 CocoaPods"
           echo "========================================="
+          
           cd ios
           
-          echo "删除 Pods..."
+          # 删除所有 CocoaPods 相关文件
+          echo "删除 Pods 目录..."
           rm -rf Pods
           
           echo "删除 Podfile.lock..."
           rm -rf Podfile.lock
           
-          echo "清理全局缓存..."
+          echo "清理全局 CocoaPods 缓存..."
           rm -rf ~/Library/Caches/CocoaPods
           
-          echo "清理 Flutter 链接..."
+          echo "清理 CocoaPods 本地 repo..."
+          pod cache clean --all 2>/dev/null || true
+          
+          # 清理 Flutter 生成文件
+          echo "清理 Flutter 链接文件..."
           rm -rf .symlinks
           rm -rf Flutter/Flutter.framework
           rm -rf Flutter/Flutter.podspec
+          rm -rf Flutter/App.framework
+          
+          # 清理 Xcode 缓存
+          echo "清理 Xcode DerivedData..."
+          rm -rf ~/Library/Developer/Xcode/DerivedData
           
           cd ..
-          echo "✅ 缓存清理完成"
+          
+          echo "✅ 清理完成"
+          echo "========================================="
+      
+      # 步骤 4: 配置 CocoaPods 使用 CDN
+      - name: 配置 CocoaPods CDN
+        script: |
+          echo "========================================="
+          echo "⚙️  配置 CocoaPods CDN"
+          echo "========================================="
+          
+          cd ios
+          
+          # 移除旧的 master repo (如果存在)
+          echo "移除旧的 master repo..."
+          pod repo remove master 2>/dev/null || true
+          
+          # 确保使用 CDN trunk
+          echo "添加 CDN trunk..."
+          pod repo add-cdn trunk https://cdn.cocoapods.org/ 2>/dev/null || true
+          
+          # 显示当前 repo 列表
+          echo "当前 CocoaPods repos:"
+          pod repo list
+          
+          cd ..
+          
+          echo "✅ CDN 配置完成"
           echo "========================================="
       
       # 步骤 5: 更新 CocoaPods 仓库
-      - name: 步骤5 - 更新 CocoaPods 仓库
+      - name: 更新 CocoaPods 仓库
         script: |
           echo "========================================="
-          echo "更新 CocoaPods 仓库"
+          echo "📥 更新 CocoaPods 仓库"
           echo "========================================="
+          
           cd ios
           
-          echo "开始更新 CocoaPods specs..."
+          echo "开始更新 specs repository..."
           pod repo update
-          EXIT_CODE=$?
           
-          if [ $EXIT_CODE -eq 0 ]; then
+          if [ $? -eq 0 ]; then
             echo "✅ CocoaPods 仓库更新成功"
           else
-            echo "❌ CocoaPods 仓库更新失败,退出码: $EXIT_CODE"
-            exit 1
+            echo "⚠️  更新失败,尝试继续..."
           fi
           
           cd ..
           echo "========================================="
       
-      # 步骤 6: 安装 CocoaPods 依赖
-      - name: 步骤6 - 安装 iOS 依赖
+      # 步骤 6: 安装 Pods (关键步骤)
+      - name: 安装 iOS 依赖
         script: |
           echo "========================================="
-          echo "安装 CocoaPods 依赖"
+          echo "📦 安装 iOS 依赖 (CocoaPods)"
           echo "========================================="
+          
           cd ios
           
-          echo "开始安装 Pods (详细模式)..."
-          pod install --repo-update --verbose 2>&1 | tee pod_install.log
-          EXIT_CODE=${PIPESTATUS[0]}
+          # 使用 --repo-update 确保使用最新的 specs
+          echo "开始安装 Pods..."
+          echo "这可能需要几分钟时间..."
           
-          echo ""
-          if [ $EXIT_CODE -eq 0 ]; then
+          pod install --repo-update --verbose 2>&1 | tee ../pod_install.log
+          INSTALL_EXIT_CODE=${PIPESTATUS[0]}
+          
+          if [ $INSTALL_EXIT_CODE -eq 0 ]; then
+            echo ""
             echo "✅ Pods 安装成功"
             echo ""
             echo "已安装的 Pods:"
-            ls -la Pods/ | head -30
+            ls -1 Pods | grep -v "Headers\|Target Support Files\|Local Podspecs" | head -20
           else
-            echo "❌ Pods 安装失败,退出码: $EXIT_CODE"
             echo ""
-            echo "错误日志最后 100 行:"
-            tail -100 pod_install.log
+            echo "❌ Pods 安装失败"
+            echo ""
+            echo "错误日志 (最后 100 行):"
+            tail -100 ../pod_install.log
+            echo ""
+            echo "查找关键错误:"
+            grep -i "error\|fatal" ../pod_install.log | tail -20
             exit 1
           fi
           
@@ -165,54 +172,63 @@ workflows:
           echo "========================================="
       
       # 步骤 7: 编译 iOS 应用
-      - name: 步骤7 - 编译 iOS 应用
+      - name: 编译 iOS 应用
         script: |
           echo "========================================="
-          echo "编译 iOS 应用"
+          echo "🔨 编译 iOS 应用"
           echo "========================================="
           
-          echo "开始编译 (详细模式)..."
-          flutter build ios --release --no-codesign -v 2>&1 | tee flutter_build.log
-          EXIT_CODE=${PIPESTATUS[0]}
-          
+          echo "开始编译 (Release 模式, 无签名)..."
+          echo "这可能需要 5-10 分钟..."
           echo ""
-          if [ $EXIT_CODE -eq 0 ]; then
+          
+          # 使用 -v 详细模式,但只保存到日志文件
+          flutter build ios --release --no-codesign 2>&1 | tee flutter_build.log
+          BUILD_EXIT_CODE=${PIPESTATUS[0]}
+          
+          if [ $BUILD_EXIT_CODE -eq 0 ]; then
+            echo ""
             echo "✅ 编译成功"
           else
-            echo "❌ 编译失败,退出码: $EXIT_CODE"
             echo ""
-            echo "编译日志最后 200 行:"
+            echo "❌ 编译失败"
+            echo ""
+            echo "编译日志 (最后 200 行):"
             tail -200 flutter_build.log
             echo ""
             echo "查找错误信息:"
-            grep -i "error" flutter_build.log | tail -20
+            grep -i "error\|failed" flutter_build.log | tail -30
             exit 1
           fi
           
+          # 验证编译产物
           echo ""
-          echo "检查编译产物..."
+          echo "验证编译产物..."
           if [ -d "build/ios/iphoneos/Runner.app" ]; then
             echo "✅ Runner.app 已生成"
             echo ""
-            echo "Runner.app 内容:"
+            echo "App 信息:"
             ls -lh build/ios/iphoneos/Runner.app
-          else
-            echo "❌ Runner.app 未生成"
             echo ""
-            echo "build 目录结构:"
-            find build -type d -maxdepth 4 2>/dev/null || echo "build 目录不存在"
+            echo "App 大小:"
+            du -sh build/ios/iphoneos/Runner.app
+          else
+            echo "❌ Runner.app 未找到"
+            echo ""
+            echo "build 目录内容:"
+            find build -type d -maxdepth 3 2>/dev/null || echo "build 目录不存在"
             exit 1
           fi
           echo "========================================="
       
       # 步骤 8: 打包 IPA
-      - name: 步骤8 - 打包 IPA
+      - name: 打包为 IPA
         script: |
           echo "========================================="
-          echo "打包 IPA"
+          echo "📦 打包 IPA (TrollStore 格式)"
           echo "========================================="
           
-          # 再次检查 Runner.app
+          # 最后检查
           if [ ! -d "build/ios/iphoneos/Runner.app" ]; then
             echo "❌ 错误: Runner.app 不存在,无法打包"
             exit 1
@@ -221,46 +237,50 @@ workflows:
           echo "进入构建目录..."
           cd build/ios/iphoneos
           
-          echo "创建 Payload 目录..."
+          echo "创建 Payload 结构..."
           mkdir -p Payload
           
-          echo "复制 Runner.app..."
-          cp -r Runner.app Payload/
+          echo "复制应用程序..."
+          cp -r Runner.app Payload/Runner.app
           
           echo "打包为 IPA..."
-          zip -r PureLive-TrollStore.ipa Payload
+          zip -r -q PureLive-TrollStore.ipa Payload
           
           echo "移动 IPA 到根目录..."
           mv PureLive-TrollStore.ipa ../../../
           
-          echo "清理 Payload..."
+          echo "清理临时文件..."
           rm -rf Payload
           
-          echo "返回根目录..."
           cd ../../..
           
           # 验证 IPA
           if [ -f "PureLive-TrollStore.ipa" ]; then
+            echo ""
             echo "✅ IPA 打包成功!"
             echo ""
-            echo "文件信息:"
+            echo "📱 文件信息:"
             ls -lh PureLive-TrollStore.ipa
             echo ""
-            echo "IPA 内容预览:"
-            unzip -l PureLive-TrollStore.ipa | head -30
+            FILE_SIZE=$(ls -lh PureLive-TrollStore.ipa | awk '{print $5}')
+            echo "📦 IPA 大小: $FILE_SIZE"
+            echo ""
+            echo "🎉 可以用 TrollStore 安装了!"
+            echo ""
+            echo "IPA 内容预览 (前 20 项):"
+            unzip -l PureLive-TrollStore.ipa | head -25
           else
-            echo "❌ IPA 打包失败"
+            echo "❌ IPA 文件未生成"
             exit 1
           fi
           echo "========================================="
     
-    # 保存所有重要文件
+    # 保存构建产物
     artifacts:
       - PureLive-TrollStore.ipa
       - "*.log"
-      - build/ios/iphoneos/Runner.app/**/*
     
-    # 邮件通知
+    # 邮件通知 (可选)
     publishing:
       email:
         recipients:
