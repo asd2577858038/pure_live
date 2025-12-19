@@ -15,69 +15,69 @@ workflows:
       - name: 步骤1 - 环境信息
         script: |
           set -e
-          echo "🔧 构建环境信息..."
+          echo "构建环境信息..."
           flutter --version
           xcodebuild -version
           pod --version
           ruby --version
-          echo "✅ 环境检查完成"
+          echo "环境检查完成"
           
       - name: 步骤2 - 清理环境
         script: |
           set -e
-          echo "🧹 清理构建环境..."
+          echo "清理构建环境..."
           flutter clean
           cd ios
           rm -rf Pods Podfile.lock .symlinks build DerivedData
           cd ..
-          echo "✅ 清理完成"
+          echo "清理完成"
       
       - name: 步骤3 - 完全重建 CocoaPods
         script: |
           set -e
-          echo "🔄 完全重建 CocoaPods specs..."
+          echo "完全重建 CocoaPods specs..."
           
           rm -rf ~/.cocoapods
           rm -rf ~/Library/Caches/CocoaPods
           
           pod setup
           
-          echo "✅ CocoaPods 重建完成"
+          echo "CocoaPods 重建完成"
       
       - name: 步骤4 - 获取 Flutter 依赖
         script: |
           set -e
-          echo "📦 获取 Flutter 依赖..."
+          echo "获取 Flutter 依赖..."
           flutter pub get
           
           if [ ! -d ".dart_tool" ]; then
-            echo "❌ 依赖获取失败"
+            echo "依赖获取失败"
             exit 1
           fi
-          echo "✅ 依赖获取成功"
+          echo "依赖获取成功"
       
       - name: 步骤5 - 修复 share_handler_ios 问题
         script: |
           set -e
-          echo "🔧 修复 share_handler_ios podspec..."
+          echo "修复 share_handler_ios podspec..."
           
           cd ios
           
           PODSPEC_PATH=".symlinks/plugins/share_handler_ios/ios/share_handler_ios.podspec"
           
           if [ -f "$PODSPEC_PATH" ]; then
-            echo "📄 找到 podspec: $PODSPEC_PATH"
+            echo "找到 podspec: $PODSPEC_PATH"
             
             cp "$PODSPEC_PATH" "${PODSPEC_PATH}.backup"
             
             sed -i.tmp '/share_handler_ios_models/d' "$PODSPEC_PATH"
             rm -f "${PODSPEC_PATH}.tmp"
             
-            echo "✅ 已移除 share_handler_ios_models 依赖"
-            echo "📄 修改后的 podspec:"
+            echo "已移除 share_handler_ios_models 依赖"
+            echo "修改后的 podspec:"
             cat "$PODSPEC_PATH"
           else
-            echo "⚠️ 未找到 share_handler_ios podspec，跳过修复"
+            echo "未找到 share_handler_ios podspec，跳过修复"
           fi
           
           cd ..
@@ -87,7 +87,7 @@ workflows:
           set -e
           cd ios
           
-          echo "📝 配置 Podfile..."
+          echo "配置 Podfile..."
           
           cp Podfile Podfile.backup
           
@@ -97,36 +97,36 @@ workflows:
             mv Podfile.tmp Podfile
           fi
           
-          echo "📄 Podfile 前10行:"
+          echo "Podfile 前10行:"
           head -10 Podfile
           
           cd ..
-          echo "✅ Podfile 配置完成"
+          echo "Podfile 配置完成"
       
       - name: 步骤7 - 手动运行 pod install
         script: |
           set -e
           cd ios
           
-          echo "📦 手动安装 CocoaPods 依赖..."
-          echo "⏰ 这可能需要几分钟..."
+          echo "手动安装 CocoaPods 依赖..."
+          echo "这可能需要几分钟..."
           
           pod install --repo-update --verbose 2>&1 | tee pod_install.log
           
           if [ ! -d "Pods" ]; then
-            echo "❌ Pod 安装失败"
-            echo "📄 最后100行日志:"
+            echo "Pod 安装失败"
+            echo "最后100行日志:"
             tail -100 pod_install.log
             exit 1
           fi
           
           if [ ! -f "Runner.xcworkspace/contents.xcworkspacedata" ]; then
-            echo "❌ Workspace 创建失败"
+            echo "Workspace 创建失败"
             exit 1
           fi
           
-          echo "✅ Pod 安装成功"
-          echo "📂 Pods 目录:"
+          echo "Pod 安装成功"
+          echo "Pods 目录:"
           ls -la Pods/ | head -20
           
           cd ..
@@ -135,7 +135,7 @@ workflows:
         script: |
           set -e
           
-          echo "🔨 使用 Flutter 构建 iOS..."
+          echo "使用 Flutter 构建 iOS..."
           
           flutter build ios \
             --release \
@@ -144,21 +144,21 @@ workflows:
             2>&1 | tee flutter_build.log
           
           if [ ! -d "build/ios/iphoneos/Runner.app" ]; then
-            echo "❌ 构建失败 - Runner.app 不存在"
-            echo "📄 最后100行日志:"
+            echo "构建失败 - Runner.app 不存在"
+            echo "最后100行日志:"
             tail -100 flutter_build.log
             exit 1
           fi
           
-          echo "✅ 构建成功"
-          echo "📂 构建产物:"
+          echo "构建成功"
+          echo "构建产物:"
           ls -lh build/ios/iphoneos/Runner.app
       
       - name: 步骤9 - 打包 IPA
         script: |
           set -e
           
-          echo "📦 打包 IPA..."
+          echo "打包 IPA..."
           
           PROJECT_ROOT=$(pwd)
           BUILD_DIR="$PROJECT_ROOT/build/ios/iphoneos"
@@ -166,7 +166,7 @@ workflows:
           IPA_NAME="PureLive_${TIMESTAMP}.ipa"
           
           if [ ! -d "$BUILD_DIR/Runner.app" ]; then
-            echo "❌ Runner.app 不存在"
+            echo "Runner.app 不存在"
             exit 1
           fi
           
@@ -176,269 +176,20 @@ workflows:
           mkdir -p Payload
           cp -r Runner.app Payload/
           
-          echo "🗜️  压缩..."
+          echo "压缩..."
           zip -r "$PROJECT_ROOT/$IPA_NAME" Payload -q
           
           cd "$PROJECT_ROOT"
           
           if [ ! -f "$IPA_NAME" ]; then
-            echo "❌ IPA 打包失败"
+            echo "IPA 打包失败"
             exit 1
           fi
           
           cp "$IPA_NAME" PureLive.ipa
           
-          echo "✅ 打包成功!"
-          echo "📦 产物列表:"
-          ls -lh *.ipa
-    
-    artifacts:
-      - "*.ipa"
-      - "ios/pod_install.log"
-      - "flutter_build.log"
-    
-    publishing:
-      email:
-        recipients:
-          - your-email@example.com
-        notify:
-          success: true
-          failure: true          
-          echo "📝 配置 Podfile..."
-          
-          # 备份
-          cp Podfile Podfile.backup
-          
-          # 确保使用 CDN 源
-          if ! grep -q "source 'https://cdn.cocoapods.org/'" Podfile; then
-            echo "添加 CDN 源到 Podfile..."
-            echo "source 'https://cdn.cocoapods.org/'" | cat - Podfile > Podfile.tmp
-            mv Podfile.tmp Podfile
-          fi
-          
-          echo "📄 Podfile 前10行:"
-          head -10 Podfile
-          
-          cd ..
-          echo "✅ Podfile 配置完成"
-      
-      - name: 步骤7 - 手动运行 pod install
-        script: |
-          set -e
-          cd ios
-          
-          echo "📦 手动安装 CocoaPods 依赖..."
-          echo "⏰ 这可能需要几分钟..."
-          
-          # 手动运行 pod install
-          pod install --repo-update --verbose 2>&1 | tee pod_install.log
-          
-          # 检查是否成功
-          if [ ! -d "Pods" ]; then
-            echo "❌ Pod 安装失败"
-            echo "📄 最后100行日志:"
-            tail -100 pod_install.log
-            exit 1
-          fi
-          
-          if [ ! -f "Runner.xcworkspace/contents.xcworkspacedata" ]; then
-            echo "❌ Workspace 创建失败"
-            exit 1
-          fi
-          
-          echo "✅ Pod 安装成功"
-          echo "📂 Pods 目录:"
-          ls -la Pods/ | head -20
-          
-          cd ..
-      
-      - name: 步骤8 - 使用 flutter build 构建
-        script: |
-          set -e
-          
-          echo "🔨 使用 Flutter 构建 iOS..."
-          
-          # 使用 flutter build 确保所有东西都正确
-          flutter build ios \
-            --release \
-            --no-codesign \
-            --verbose \
-            2>&1 | tee flutter_build.log
-          
-          # 检查构建是否成功
-          if [ ! -d "build/ios/iphoneos/Runner.app" ]; then
-            echo "❌ 构建失败 - Runner.app 不存在"
-            echo "📄 最后100行日志:"
-            tail -100 flutter_build.log
-            exit 1
-          fi
-          
-          echo "✅ 构建成功"
-          echo "📂 构建产物:"
-          ls -lh build/ios/iphoneos/Runner.app
-      
-      - name: 步骤9 - 打包 IPA
-        script: |
-          set -e
-          
-          echo "📦 打包 IPA..."
-          
-          PROJECT_ROOT=$(pwd)
-          BUILD_DIR="$PROJECT_ROOT/build/ios/iphoneos"
-          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-          IPA_NAME="PureLive_${TIMESTAMP}.ipa"
-          
-          # 验证 app 存在
-          if [ ! -d "$BUILD_DIR/Runner.app" ]; then
-            echo "❌ Runner.app 不存在"
-            exit 1
-          fi
-          
-          cd "$BUILD_DIR"
-          
-          # 创建 Payload
-          rm -rf Payload
-          mkdir -p Payload
-          cp -r Runner.app Payload/
-          
-          # 打包
-          echo "🗜️  压缩..."
-          zip -r "$PROJECT_ROOT/$IPA_NAME" Payload -q
-          
-          cd "$PROJECT_ROOT"
-          
-          # 验证
-          if [ ! -f "$IPA_NAME" ]; then
-            echo "❌ IPA 打包失败"
-            exit 1
-          fi
-          
-          # 创建固定名称副本
-          cp "$IPA_NAME" PureLive.ipa
-          
-          echo "✅ 打包成功!"
-          echo "📦 产物列表:"
-          ls -lh *.ipa
-    
-    artifacts:
-      - "*.ipa"
-      - "ios/pod_install.log"
-      - "flutter_build.log"
-    
-    publishing:
-      email:
-        recipients:
-          - your-email@example.com
-        notify:
-          success: true
-          failure: true          if [ ! -f "ios/Runner/GeneratedPluginRegistrant.m" ]; then
-            echo "❌ GeneratedPluginRegistrant.m 未生成"
-            exit 1
-          fi
-          
-          echo "📄 GeneratedPluginRegistrant.m 前30行:"
-          head -30 ios/Runner/GeneratedPluginRegistrant.m
-          
-          echo "✅ 插件注册生成完成"
-      
-      - name: 步骤7 - 手动运行 pod install
-        script: |
-          set -e
-          cd ios
-          
-          echo "📦 手动安装 CocoaPods 依赖..."
-          echo "⏰ 这可能需要几分钟..."
-          
-          # 手动运行 pod install
-          pod install --repo-update --verbose 2>&1 | tee pod_install.log
-          
-          # 检查是否成功
-          if [ ! -d "Pods" ]; then
-            echo "❌ Pod 安装失败"
-            echo "📄 最后100行日志:"
-            tail -100 pod_install.log
-            exit 1
-          fi
-          
-          if [ ! -f "Runner.xcworkspace/contents.xcworkspacedata" ]; then
-            echo "❌ Workspace 创建失败"
-            exit 1
-          fi
-          
-          # 检查关键插件是否安装
-          echo "🔍 检查关键插件:"
-          ls -la Pods/ | grep -E "app_links|fijkplayer" || echo "⚠️ 某些插件可能未安装"
-          
-          echo "✅ Pod 安装成功"
-          
-          cd ..
-      
-      - name: 步骤8 - 使用 flutter build 构建
-        script: |
-          set -e
-          
-          echo "🔨 使用 Flutter 构建 iOS..."
-          
-          # 使用 flutter build 确保所有东西都正确
-          flutter build ios \
-            --release \
-            --no-codesign \
-            --verbose \
-            2>&1 | tee flutter_build.log
-          
-          # 检查构建是否成功
-          if [ ! -d "build/ios/iphoneos/Runner.app" ]; then
-            echo "❌ 构建失败 - Runner.app 不存在"
-            echo "📄 最后100行日志:"
-            tail -100 flutter_build.log
-            exit 1
-          fi
-          
-          echo "✅ 构建成功"
-          echo "📂 构建产物:"
-          ls -lh build/ios/iphoneos/Runner.app
-      
-      - name: 步骤9 - 打包 IPA
-        script: |
-          set -e
-          
-          echo "📦 打包 IPA..."
-          
-          PROJECT_ROOT=$(pwd)
-          BUILD_DIR="$PROJECT_ROOT/build/ios/iphoneos"
-          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-          IPA_NAME="PureLive_${TIMESTAMP}.ipa"
-          
-          # 验证 app 存在
-          if [ ! -d "$BUILD_DIR/Runner.app" ]; then
-            echo "❌ Runner.app 不存在"
-            exit 1
-          fi
-          
-          cd "$BUILD_DIR"
-          
-          # 创建 Payload
-          rm -rf Payload
-          mkdir -p Payload
-          cp -r Runner.app Payload/
-          
-          # 打包
-          echo "🗜️  压缩..."
-          zip -r "$PROJECT_ROOT/$IPA_NAME" Payload -q
-          
-          cd "$PROJECT_ROOT"
-          
-          # 验证
-          if [ ! -f "$IPA_NAME" ]; then
-            echo "❌ IPA 打包失败"
-            exit 1
-          fi
-          
-          # 创建固定名称副本
-          cp "$IPA_NAME" PureLive.ipa
-          
-          echo "✅ 打包成功!"
-          echo "📦 产物列表:"
+          echo "打包成功!"
+          echo "产物列表:"
           ls -lh *.ipa
     
     artifacts:
