@@ -1,6 +1,6 @@
 workflows:
   ios-trollstore:
-    name: 构建 iOS IPA (最终修复版)
+    name: 构建 iOS IPA (TrollStore 终极修复版)
     max_build_duration: 60
     instance_type: mac_mini_m2
     
@@ -23,13 +23,13 @@ workflows:
           flutter pub upgrade
           flutter pub get
 
-      # 第2步: 修正 Podfile (改用更安全的写法)
+      # 第2步: 修正 Podfile (防止 iOS 版本报错)
       - name: 第2步 - 修正 Podfile 配置
         script: |
           echo "🔧 正在修正 iOS Deployment Target..."
           cd ios
           
-          # 使用 echo 逐行追加，避免 YAML 格式错误
+          # 使用 echo 追加配置，避免缩进问题
           echo "" >> Podfile
           echo "post_install do |installer|" >> Podfile
           echo "  installer.pods_project.targets.each do |target|" >> Podfile
@@ -39,8 +39,6 @@ workflows:
           echo "    end" >> Podfile
           echo "  end" >> Podfile
           echo "end" >> Podfile
-          
-          echo "✅ Podfile 修正完成"
 
       # 第3步: 安装 iOS 依赖
       - name: 第3步 - 安装 Pods
@@ -56,42 +54,37 @@ workflows:
           echo "🔨 开始编译..."
           flutter build ios --release --no-codesign
 
-      # 第5步: 打包 IPA
+      # 第5步: 打包 IPA (扁平化逻辑，修复缩进报错)
       - name: 第5步 - 打包 IPA
         script: |
           echo "📦 正在打包..."
           PROJECT_ROOT=$(pwd)
           BUILD_DIR="$PROJECT_ROOT/build/ios/iphoneos"
           
-          # 注意：这里的 if 必须保持缩进，
-    
+          # 检查目录是否存在，不存在直接退出 (不使用 else，避免缩进错误)
+          if [ ! -d "$BUILD_DIR/Runner.app" ]; then
+            echo "❌ 错误：找不到 Runner.app"
+            exit 1
+          fi
+          
+          # 如果上面没退出，说明文件存在，继续执行
+          cd "$BUILD_DIR"
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -r "$PROJECT_ROOT/PureLive.ipa" Payload
+          
+          echo "✅ IPA 打包成功！"
+
+    artifacts:
+      - "*.ipa"
+
     publishing:
       email:
         recipients:
-          - your-email@example.com # 记得改成你的邮箱
+          - your-email@example.com
         notify:
           success: true
           failure: true
-          fi
-          cd ..
-          echo "========================================="
-      
-      - name: 禁用代码签名
-        script: |
-          echo "========================================="
-          echo "🔓 禁用代码签名"
-          echo "========================================="
-          
-          cd ios
-          cp Runner.xcodeproj/project.pbxproj Runner.xcodeproj/project.pbxproj.backup
-          
-          sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer"/CODE_SIGN_IDENTITY = ""/g' Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Distribution"/CODE_SIGN_IDENTITY = ""/g' Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/DEVELOPMENT_TEAM = [^;]*/DEVELOPMENT_TEAM = ""/g' Runner.xcodeproj/project.pbxproj
-          
-          cd ..
-          echo "✅ 代码签名已禁用"
-          echo "========================================="
       
       - name: 编译 iOS 应用
         script: |
