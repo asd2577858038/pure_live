@@ -103,7 +103,10 @@ workflows:
           
           cd ..
           echo "Podfile 配置完成"
-      
+      echo "步骤6.5 - 更新 CocoaPods 仓库"
+         cd ios
+         pod repo update
+          cd ..
       - name: 步骤7 - 手动运行 pod install
         script: |
           set -e
